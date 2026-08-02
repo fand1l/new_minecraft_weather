@@ -110,4 +110,35 @@ fi
 # shellcheck disable=SC2086
 "$JAVAC" -d "$OUT" $SOURCES || exit 1
 "$JAVAC" -cp "$OUT" -d "$OUT" "$REPO_ROOT/tools/model-harness/ModelHarness.java" || exit 1
-"$JAVA" -cp "$OUT" ModelHarness
+"$JAVA" -cp "$OUT" ModelHarness || MODEL_FAILED=1
+
+# ------------------------------------------------------------------- config layer (needs gson)
+# The config package is the one part outside the model that still builds standalone, because its
+# only dependency is Gson -- which Minecraft itself ships, so a copy is already in the Gradle
+# cache on any machine that has run the build.
+GSON_JAR="${GSON_JAR:-}"
+
+if [ -z "$GSON_JAR" ]; then
+	GSON_JAR=$(find "$GRADLE_HOME/caches/modules-2/files-2.1/com.google.code.gson" \
+		-name 'gson-*.jar' 2>/dev/null | grep -Ev 'sources|javadoc' | sort -V | tail -1)
+fi
+
+if [ -z "$GSON_JAR" ]; then
+	echo
+	echo "-- skipping config checks: no gson jar under $GRADLE_HOME/caches"
+	echo "   (run ./gradlew genSources once, or pass GSON_JAR=/path/to/gson.jar)"
+else
+	echo
+	CONFIG_SOURCES=$(find "$REPO_ROOT/src/main/java/com/fand1l/vibeweather/config" -name '*.java' 2>/dev/null)
+
+	if [ -n "$CONFIG_SOURCES" ]; then
+		# shellcheck disable=SC2086
+		"$JAVAC" -cp "$OUT:$GSON_JAR" -d "$OUT" $CONFIG_SOURCES || exit 1
+		"$JAVAC" -cp "$OUT:$GSON_JAR" -d "$OUT" "$REPO_ROOT/tools/model-harness/ConfigHarness.java" || exit 1
+		"$JAVA" -cp "$OUT:$GSON_JAR" ConfigHarness || CONFIG_FAILED=1
+	fi
+fi
+
+if [ -n "${MODEL_FAILED:-}" ] || [ -n "${CONFIG_FAILED:-}" ]; then
+	exit 1
+fi
