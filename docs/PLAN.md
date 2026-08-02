@@ -19,32 +19,32 @@
 
 ## Що робити просто зараз
 
-`genSources` неможливо запустити без Gradle-проєкту, тому я поклав у репозиторій **тільки
-збіркові файли** (без жодного коду моду):
+**Раунд 1 (`verify-262-names.sh`) виконано** — імена файлів отримано, див. «Підтверджено
+раундом 1». Але звіт вийшов неповний: секції «declarations inside those files» були порожні
+через баг у моєму скрипті (вивід усередині `while … done < <(find …)` у поєднанні з
+`exec > >(tee …)` не доходив до звіту). Скрипт виправлено й перевірено на синтетичному
+sources-jar.
 
-```
-build.gradle  gradle.properties  settings.gradle  .gitignore
-gradlew  gradlew.bat  gradle/wrapper/{gradle-wrapper.jar,gradle-wrapper.properties}
-tools/verify-262-names.sh
-```
-
-Два кроки на твоїй машині:
+**Раунд 2 — потрібен ще один прогін:**
 
 ```bash
-./gradlew genSources          # Loom декомпілює Minecraft 26.2 з мапінгами проєкту
-./tools/verify-262-names.sh   # згенерує verify-262-names.txt
+./tools/dump-262-api.sh       # згенерує dump-262-api.txt
 ```
 
-Скинь мені `verify-262-names.txt` — і я пишу Крок 2 без жодного вигаданого імені.
+`genSources` повторно ганяти не треба — джерела вже декомпільовані.
+Скрипт дістає **сигнатури**, а не лише імена: повний текст малих ключових класів
+(`WeatherEffectRenderer`, `WeatherRenderState`, `FogRenderer`, `FogData`, `FogEnvironment`,
+`WeatherCommand`), погодні рядки з великих (`Level`, `ServerLevel`, `ClientLevel`,
+`LevelRenderer`) і `javap` по класах Fabric API, які ми збираємось використати.
 
-Скрипт read-only: він нічого не пише в кеші Gradle, тільки читає sources-jar-и й друкує
-звіт. Що він витягує — рівно сім невідомих із розділу «Що не перевірено».
+Скрипт read-only: у кеші Gradle нічого не пише, лише читає jar-и й друкує звіт.
+Написаний навмисне примітивно — тільки `for`-цикли, `grep -E`, одна перенаправлена
+секція; саме «розумні» конструкції з'їли вивід у раунді 1.
 
-> **Я не можу прогнати це тут.** Мережева політика цього середовища ріже `maven.fabricmc.net`,
+> **Я не можу прогнати це тут.** Мережева політика середовища ріже `maven.fabricmc.net`,
 > `libraries.minecraft.net` і `piston-data.mojang.com`, тож Loom не резолвить ні Minecraft,
 > ні Fabric (перевірено: `gradle wrapper` падає на резолві плагіна Loom). Локальна JDK тут
-> взагалі 21, а не 25. Скрипт я запустив «вхолосту» — він коректно доходить до перевірки
-> наявності sources-jar і зупиняється з інструкцією; повний шлях перевірити нічим.
+> 21, а не 25.
 
 ---
 
@@ -82,26 +82,41 @@ tools/verify-262-names.sh
 
 `build.gradle` у репозиторії свідомо **без** блоку `mappings` — з коментарем, чому.
 
-### Що не перевірено — і що дістає `verify-262-names.sh`
+### Підтверджено раундом 1 (`genSources` на реальному 26.2)
 
-Мережа ріже `fabricmc.net`, `docs.fabricmc.net`, `minecraft.wiki`, `piston-meta.mojang.com`
-і `linkie.shedaniel.dev`, тому офіційні мапінги Mojang завантажити не вдалося. Не підтверджені:
+| Що шукали | Реальне ім'я у 26.2 | Наслідок |
+|---|---|---|
+| Рендер погоди | `net.minecraft.client.renderer.WeatherEffectRenderer` | ✅ ціль M4 підтверджена |
+| Стан рендеру погоди | `net.minecraft.client.renderer.state.level.WeatherRenderState` | 🆕 погода теж переїхала на extract/submit-архітектуру |
+| Туман | `net.minecraft.client.renderer.fog.FogRenderer`, `.fog.FogData`, `.fog.environment.FogEnvironment` + `AtmosphericFogEnvironment`, `WaterFogEnvironment`, `LavaFogEnvironment`, `PowderedSnowFogEnvironment`, `BlindnessFogEnvironment`, `DarknessFogEnvironment`, `MobEffectFogEnvironment` | 🆕 туман тепер **плагінна стратегія**, а не один клас. Можливо, M5 не потрібен зовсім — реєструємо свій `FogEnvironment`. |
+| Тип туману | `net.minecraft.world.level.material.FogType` | — |
+| Ванільна `/weather` | `net.minecraft.server.commands.WeatherCommand` | ✅ ціль M6 підтверджена |
+| Blaze3D-пайплайн | `com.mojang.blaze3d.pipeline.RenderPipeline` з **публічним `Builder`**: `withVertexShader/withFragmentShader(Identifier)`, `withVertexBinding`, `withBindGroupLayout`, `withColorTargetState`, `withDepthStencilState`, `withPolygonMode`, `withCull`, `withPrimitiveTopology`, `withShaderDefine`, `buildSnippet()` | ✅ **головний ризик знято**: власний пайплайн офіційно підтримується через Blaze3D, сирий GL не потрібен |
+| Fabric-розширення пайплайна | `RenderPipeline implements FabricRenderPipeline`; є `FabricRenderPipeline.Builder` | Fabric офіційно інжектить інтерфейс у ванільний білдер |
+| GPU-ресурси | `blaze3d.buffers.{GpuBuffer, GpuBufferSlice, GpuFence, Std140Builder, Std140SizeCalculator}`, `blaze3d.framegraph.{FrameGraphBuilder, FramePass}`, `GpuFormat`, `IndexType` | Уніформи через std140 bind groups (Vulkan-стиль) |
+| Заміна `WorldRenderEvents` | `net.fabricmc.fabric.api.client.rendering.v1.level.{LevelRenderEvents, LevelExtractionEvents, LevelRenderContext, LevelExtractionContext, LevelTerrainRenderContext, AbstractLevelRenderContext}` | ✅ подія світового рендеру є, просто переїхала в підпакет `level` |
+| Render-state API | `FabricRenderState`, `RenderStateDataKey`, `SubmitRenderPhase`, `SubmitRenderPhases`, `FabricOrderedSubmitNodeCollector`, `InvalidateRenderStateCallback` | Офіційний шлях додати свої дані в extract-фазу |
+| Партикли (Fabric) | `api.client.particle.v1.{ParticleProviderRegistry, FabricSpriteSet, ParticleGroupRegistry, ParticleRenderEvents}`, `api.particle.v1.FabricParticleTypes` | ✅ `ParticleProviderRegistry`, а не `ParticleFactoryRegistry` |
+| Партикли (ваніль) | `net.minecraft.client.particle.{ParticleProvider, SpriteSet, ParticleEngine}`, `net.minecraft.core.particles.ParticleType` | — |
 
-1. **Клас рендеру погоди.** З 1.21.5 дощ/сніг виїхав з `LevelRenderer` в окремий клас
-   (тоді — `WeatherEffectRenderer`). Як він зветься у 26.2 і яка сигнатура методу малювання — не знаю.
-2. **Клас туману.** У 1.21.2+ це `FogRenderer` + `FogParameters`. Після переробки пайплайна
-   в 26.1/26.2 майже напевно змінилось — не знаю як.
-3. **Метод просування погодного циклу в `ServerLevel`.** Історично `advanceWeatherCycle()`. У 26.2 — не підтверджено.
-4. **Ім'я класу ванільної `/weather`** (`WeatherCommand`?) і сигнатура його `register`.
-5. **Чи лишились `WorldRenderEvents` у Fabric API 0.156.0.** Очікуваний шлях віддає 404,
-   хоча модуль `fabric-rendering-v1` існує й переструктурований у підпакети
-   (`.../rendering/v1/hud/HudElementRegistry.java` — є).
-6. **Чи є у Fabric API 0.156.0 події туману.** `FogEvents` / `FabricFogEvents` за очікуваними
-   шляхами немає → схоже, API немає взагалі і потрібен міксин.
-7. **Blaze3D API для власного батчу текстурованих квадів у 26.2.** Найбільша діра:
-   `RenderPipeline` / `RenderType` / `RenderState` + Vulkan означають інший спосіб реєстрації
-   пайплайна, ніж я пам'ятаю. Плюс ім'я реєстру фабрик партиклів на клієнті
-   (`ParticleFactoryRegistry`? — очікуваний шлях 404; `FabricParticleTypes` у common — є).
+Подій туману у Fabric API немає й далі — але це вже не проблема, бо ваніль сама зробила
+туман розширюваним через `FogEnvironment`.
+
+### Чого ще бракує — це дістає раунд 2 (`dump-262-api.sh`)
+
+Імена є, **сигнатур немає**. Перед написанням коду треба знати:
+
+1. Сигнатуру методу малювання у `WeatherEffectRenderer` і що саме приймає `WeatherRenderState`
+   (щоб зрозуміти, чи скасовувати рендер, чи достатньо підмінити стан у extract-фазі).
+2. Чи `FogEnvironment` реєструється публічно (тоді M5 зникає), чи це закритий список.
+3. Точні імена погодних полів і методів у `ServerLevel` / `Level` — зокрема чи існує
+   `advanceWeatherCycle`, `isRainingAt`, `getRainLevel`, `getThunderLevel` під цими іменами.
+4. Сигнатуру `WeatherCommand.register`.
+5. Сигнатури `LevelRenderEvents` / `LevelExtractionEvents` — які саме фази доступні
+   і що дає контекст (це визначає, чи потрібен M4 взагалі).
+6. `ParticleProviderRegistry.register(...)` і форму `FabricSpriteSet`.
+7. Який ванільний `RenderPipeline` використовує погода (`RenderPipelines`), щоб за
+   можливості перевикористати його замість власного шейдера.
 
 ---
 
@@ -350,14 +365,15 @@ new_minecraft_weather/
 
 | # | Ціль (Mojang-мапінги) | Навіщо | Чому не можна без міксина |
 |---|---|---|---|
-| **M1** | `ServerLevel` — метод просування погодного циклу *(ім'я → `genSources`, п.0.3)* | Заглушити ванільні таймери дощу/грози й розсилку `ClientboundGameEventPacket` | Fabric API не має події «до тіку погоди» і не має способу вимкнути погодний цикл. Ґеймрул `doWeatherCycle` не годиться: він морозить стан, а не віддає його нам, і його видно гравцю. |
+| **M1** | `ServerLevel` — метод просування погодного циклу *(точне ім'я → раунд 2)* | Заглушити ванільні таймери дощу/грози й розсилку `ClientboundGameEventPacket` | Fabric API не має події «до тіку погоди» і не має способу вимкнути погодний цикл. Ґеймрул `doWeatherCycle` не годиться: він морозить стан, а не віддає його нам, і його видно гравцю. |
 | **M2** | `Level#isRainingAt(BlockPos)` | Зробити ванільний геймплей **локальним**: гасіння вогню, ріст врожаю, ванільний казан, бонус риболовлі, перевірки спавну | Це єдина позиційно-залежна точка входу у ванілі. Один міксин тут дешевший і надійніший, ніж патчити десяток систем окремо. Події немає. |
 | **M3** | `Level#getRainLevel(float)`, `#getThunderLevel(float)` | Затемнення неба, гучність, освітлення для спавну читають саме їх | Немає API. Без них клієнт малює наш дощ, а небо лишається ясним. |
-| **M4** | Клієнтський рендерер погоди *(п.0.1)* | Повністю замінити малювання опадів: нахил за вітром, щільність за рівнем, дальність до render distance | Рендер погоди зашитий у ваніль і не конфігурується. Рендер-подій для погоди у Fabric API немає. |
-| **M5** | Рендерер туману *(п.0.2)* | Дальність видимості від опадів + незалежна вісь туману | API туману у Fabric 0.156.0 не знайдено (п.0.6). Якщо `genSources`/jar покажуть, що воно є — міксин прибираємо. |
-| **M6** | Ванільна `/weather` — `register` *(п.0.4)* | Скасувати реєстрацію ванільної команди й підставити свою з тим самим синтаксисом | Brigadier не має публічного API для видалення зареєстрованого вузла. Альтернатива — accessor-міксин на приватну мапу `children` у `CommandNode`, що гірше: лізе в чужу структуру. Скасувати реєстрацію на HEAD акуратніше. |
+| **M4** | `net.minecraft.client.renderer.WeatherEffectRenderer` ✅ | Скасувати ванільне малювання опадів; своє малюємо через `LevelRenderEvents` | Ціль підтверджена. **Обсяг може скоротитись:** у 26.2 погода має `WeatherRenderState` у extract-фазі. Якщо раунд 2 покаже, що стан можна наповнити своїми даними через `FabricRenderState`/`RenderStateDataKey`, міксин зведеться до чистого скасування — або зникне зовсім. |
+| **M5** | `net.minecraft.client.renderer.fog.FogRenderer` ⚠️ **під питанням** | Дальність видимості від опадів + незалежна вісь туману | У 26.2 туман — плагінна стратегія `FogEnvironment` (7 ванільних реалізацій). Якщо реєстр відкритий, **міксин не потрібен узагалі** — реєструємо свій `FogEnvironment`. Рішення після раунду 2. |
+| **M6** | `net.minecraft.server.commands.WeatherCommand#register` ✅ | Скасувати реєстрацію ванільної команди й підставити свою з тим самим синтаксисом | Brigadier не має публічного API для видалення зареєстрованого вузла. Альтернатива — accessor-міксин на приватну мапу `children` у `CommandNode`, що гірше: лізе в чужу структуру. Скасувати реєстрацію на HEAD акуратніше. |
 
-**Разом 6 міксинів**, з них 4 — `@Inject(cancellable = true)` на 3–5 рядків.
+**Разом 4–6 міксинів** — M5 імовірно зникне, M4 може скоротитись до однорядкового
+скасування. Остаточно — після раунду 2.
 
 ### Де міксини свідомо НЕ потрібні
 
@@ -463,8 +479,9 @@ new_minecraft_weather/
 
 | Ризик | Наслідок | Мітигація |
 |---|---|---|
-| **Імена класів 26.2 (п.0.1–0.4, 0.7)** | Не компілюється / міксин не знаходить ціль | Знято твоїм вибором: `genSources` + `tools/verify-262-names.sh` перед написанням коду. |
-| **Blaze3D API для власного пайплайна (п.0.7)** | Найбільший ризик. Може виявитись, що потрібен власний шейдер у новому Vulkan-сумісному форматі | План B: перевикористати **ванільний** `RenderType`/пайплайн погоди (текстури дощу й снігу вже завантажені) і малювати ним свою геометрію — тоді власний шейдер не потрібен зовсім. Якщо і це не вийде — скажу прямо, а не тягтиму сирий GL. |
+| **Імена класів 26.2** | Не компілюється / міксин не знаходить ціль | ✅ Знято раундом 1: усі ключові класи знайдено в реальних декомпільованих джерелах. Лишились сигнатури — раунд 2. |
+| **Blaze3D API для власного пайплайна** | Був найбільшим ризиком: чи взагалі можна зробити свій пайплайн без сирого GL | ✅ **Знято.** `RenderPipeline.Builder` публічний, з `withVertexShader/withFragmentShader(Identifier)`, `withBindGroupLayout`, `withVertexBinding` тощо, і Fabric інжектить у нього `FabricRenderPipeline`. Сирий GL не потрібен. План B (перевикористати ванільний пайплайн погоди) лишається як дешевший варіант — перевіримо в раунді 2. |
+| **Vulkan-стиль уніформ (bind groups / std140)** | Новий для мене спосіб передавати параметри в шейдер | `Std140Builder` / `Std140SizeCalculator` є в Blaze3D. Якщо перевикористаємо ванільний пайплайн погоди — власних уніформ не буде взагалі, і питання зникає. |
 | **Рендер опадів на всю дальність дорожчий за ванільний** | Просадка FPS при 32 чанках | LOD: щільність стовпців падає з відстанню, дальні зони — розріджена «стіна» замість повної сітки; жорсткий ліміт `render.max_columns`; усі буфери преаловані. |
 | **Роздільність сітки vs різкість межі** | Розмита стіна дощу | Інваріант `blend_band_min >= 2 × grid.step` з валідацією в конфігу; `grid.step` налаштовний. |
 | **`isRaining()`/`isThundering()` глобальні за природою** | Затемнення неба й освітлення для спавну лишаються приблизними на сервері | M3 повертає значення з семпла в точці гравця: для клієнта точно, для серверних перевірок спавну — наближено. Прийнято усвідомлено, буде в README. |
