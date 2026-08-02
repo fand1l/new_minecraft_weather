@@ -102,21 +102,99 @@ sources-jar.
 Подій туману у Fabric API немає й далі — але це вже не проблема, бо ваніль сама зробила
 туман розширюваним через `FogEnvironment`.
 
-### Чого ще бракує — це дістає раунд 2 (`dump-262-api.sh`)
+### Підтверджено раундом 2 — архітектура визначена
 
-Імена є, **сигнатур немає**. Перед написанням коду треба знати:
+**Рендер опадів.** `WeatherEffectRenderer` має два **публічні** методи:
 
-1. Сигнатуру методу малювання у `WeatherEffectRenderer` і що саме приймає `WeatherRenderState`
-   (щоб зрозуміти, чи скасовувати рендер, чи достатньо підмінити стан у extract-фазі).
-2. Чи `FogEnvironment` реєструється публічно (тоді M5 зникає), чи це закритий список.
-3. Точні імена погодних полів і методів у `ServerLevel` / `Level` — зокрема чи існує
-   `advanceWeatherCycle`, `isRainingAt`, `getRainLevel`, `getThunderLevel` під цими іменами.
-4. Сигнатуру `WeatherCommand.register`.
-5. Сигнатури `LevelRenderEvents` / `LevelExtractionEvents` — які саме фази доступні
-   і що дає контекст (це визначає, чи потрібен M4 взагалі).
-6. `ParticleProviderRegistry.register(...)` і форму `FabricSpriteSet`.
-7. Який ванільний `RenderPipeline` використовує погода (`RenderPipelines`), щоб за
-   можливості перевикористати його замість власного шейдера.
+```java
+public void extractRenderState(ClientLevel level, float partialTicks, Vec3 cameraPos, WeatherRenderState renderState)
+public void render(Vec3 cameraPos, WeatherRenderState renderState)
+```
+
+Що робить `extractRenderState` (важливо — це вирішує майже все):
+
+- `renderState.intensity = level.getRainLevel(partialTicks)` → **наш M3 керує інтенсивністю задарма**;
+- `renderState.radius = Minecraft.getInstance().options.weatherRadius().get()` →
+  **у 26.2 радіус рендеру погоди вже є ванільною клієнтською опцією**. «Дощ до дальності
+  промальовування» не треба винаходити — треба лише підмінити це число;
+- далі подвійний цикл по `x`/`z` у межах радіуса, і для кожної колонки:
+  `Precipitation p = level.getPrecipitationAt(mutablePos.set(x, camY, z))` →
+  **локальність вмикається прямо у ванільний цикл**: досить зробити цей виклик
+  позиційно-залежним, і стіна дощу з'явиться сама, без власного циклу.
+
+Геометрія колонки в `renderInstances`: чотири вершини, у верхньої пари `y1 = topY - cam.y`,
+у нижньої `y0 = bottomY - cam.y`, а `x`/`z` **однакові** зверху й знизу — тобто стовп строго
+вертикальний. **Нахил = зсув верхньої пари вершин** на `(sin dir, cos dir) · висота · tan(кут)`.
+Рівно те, що я планував, і тепер підтверджено по вихідниках.
+
+Малюється це так (усе ванільне, свого шейдера не треба):
+`RenderPipelines.WEATHER_DEPTH_WRITE` / `WEATHER_NO_DEPTH_WRITE`,
+`DefaultVertexFormat.PARTICLE`, `OutputTarget.WEATHER_TARGET`,
+текстури `textures/environment/rain.png` і `snow.png`.
+
+`WeatherRenderState implements FabricRenderState`, а в Fabric API є `RenderStateDataKey` —
+офіційний спосіб причепити свої дані до ванільного render-state. Запис `ColumnInstance`
+поля для нахилу не має, тож свої колонки веземо через `RenderStateDataKey`.
+
+**Серверна погода.** Підтверджено все:
+
+- `ServerLevel.advanceWeatherCycle()` ✅ — ціль M1 саме під цим іменем;
+- `Level.precipitationAt(BlockPos)` — **єдина позиційно-залежна точка входу**;
+  `Level.isRainingAt(pos)` це буквально `precipitationAt(pos) == RAIN`. Один хук
+  накриває гасіння вогню, врожай, казан, риболовлю, спавн;
+- `ClientLevel.getPrecipitationAt(BlockPos)` — **окремий** метод клієнта (інша назва!),
+  ним користуються рендер погоди й бризки. Треба хукати обидва;
+- погода тепер **глобальна на сервер**, а не на вимір: `MinecraftServer.getWeatherData()` →
+  `net.minecraft.world.level.saveddata.WeatherData`; `ServerLevel.getWeatherData()` лише делегує;
+- ґеймрул тепер `GameRules.ADVANCE_WEATHER` (не `doWeatherCycle`);
+- `ServerLevel.tickPrecipitation(BlockPos)` — **публічний** → прискорений казан і сніг
+  робимо прямим викликом, **без міксина**;
+- `LayeredCauldronBlock.handlePrecipitation(BlockState, Level, BlockPos, Biome.Precipitation)` — публічний;
+- `Biome.getPrecipitationAt(BlockPos, int seaLevel)`, `coldEnoughToSnow`, `warmEnoughToRain`,
+  `hasPrecipitation()` — усе на місці для вибору «сніг чи дощ»;
+- `WeatherCommand.register(CommandDispatcher<CommandSourceStack>)` ✅.
+
+### Туман: моє припущення було хибне
+
+Я сподівався, що `FogEnvironment` — відкритий реєстр. **Ні.** Це приватний статичний список:
+
+```java
+private static final List<FogEnvironment> FOG_ENVIRONMENTS = Lists.newArrayList(
+    new LavaFogEnvironment(), new PowderedSnowFogEnvironment(), new BlindnessFogEnvironment(),
+    new DarknessFogEnvironment(), new WaterFogEnvironment(), new AtmosphericFogEnvironment());
+```
+
+Публічного API реєстрації немає, тож свій `FogEnvironment` офіційно не додати.
+
+Але вийшло навіть краще. `AtmosphericFogEnvironment.updateRainFogState()` уже рахує
+`rainFogMultiplier` з `level.getRainLevel(partialTicks)` і стискає туман на
+`-160 / -256 * multiplier`. Тобто **«чим сильніші опади — тим менша видимість» працює
+задарма через M3**, нічого писати не треба.
+
+Для незалежної осі туману лишається дрібниця: `FogRenderer.setupFog(...)` **повертає
+`FogData`** з публічними полями. Один `@Inject(at = @At("RETURN"))`, який читає
+`cir.getReturnValue()` і масштабує `environmentalStart/End` — п'ять рядків, і приватного
+списку ми не чіпаємо.
+
+### Чого ще бракує — раунд 3 (`dump-262-api-3.sh`), останній
+
+Секція `javap` у раунді 2 провалилась цілком: Fabric API 0.156.0 зібраний під Java 25
+(class file v69), а `javap` у `PATH` — зі старішого JDK і такі класи не читає. Помилку
+приховав мій `2>/dev/null`, тому вийшов 21 однаковий «not on classpath». Раунд 3 читає
+**вихідники** Fabric API (`-sources.jar`), а на javap відкочується лише за наявності JDK ≥ 25.
+
+Треба ще:
+
+1. `RenderStateDataKey` + `FabricRenderState` — як саме чіпляти свої дані до `WeatherRenderState`.
+2. `LevelExtractionEvents` / `LevelRenderEvents` — чи є фаза, у якій можна малювати погоду
+   без міксина (погода йде окремим frame-graph-проходом `addWeatherPass` у власний таргет,
+   тож імовірно ні — але це вирішує долю M6).
+3. `ParticleProviderRegistry.register(...)` і форму `FabricSpriteSet`.
+4. Повні тіла `Level.precipitationAt` і `ClientLevel.getPrecipitationAt` — щоб точно
+   відтворити ванільні умови (`canSeeSky`, висота, `seaLevel`), а не зламати їх.
+5. `SingleQuadParticle` + `ParticleRenderType` — база для партикла смуг вітру.
+6. Тип `Options.weatherRadius()` (`OptionInstance<Integer>`?) — щоб коректно його підміняти.
+7. `WeatherData` і `MinecraftServer.setWeatherParameters` — для мапінгу ванільної `/weather`.
 
 ---
 
@@ -365,15 +443,26 @@ new_minecraft_weather/
 
 | # | Ціль (Mojang-мапінги) | Навіщо | Чому не можна без міксина |
 |---|---|---|---|
-| **M1** | `ServerLevel` — метод просування погодного циклу *(точне ім'я → раунд 2)* | Заглушити ванільні таймери дощу/грози й розсилку `ClientboundGameEventPacket` | Fabric API не має події «до тіку погоди» і не має способу вимкнути погодний цикл. Ґеймрул `doWeatherCycle` не годиться: він морозить стан, а не віддає його нам, і його видно гравцю. |
-| **M2** | `Level#isRainingAt(BlockPos)` | Зробити ванільний геймплей **локальним**: гасіння вогню, ріст врожаю, ванільний казан, бонус риболовлі, перевірки спавну | Це єдина позиційно-залежна точка входу у ванілі. Один міксин тут дешевший і надійніший, ніж патчити десяток систем окремо. Події немає. |
-| **M3** | `Level#getRainLevel(float)`, `#getThunderLevel(float)` | Затемнення неба, гучність, освітлення для спавну читають саме їх | Немає API. Без них клієнт малює наш дощ, а небо лишається ясним. |
-| **M4** | `net.minecraft.client.renderer.WeatherEffectRenderer` ✅ | Скасувати ванільне малювання опадів; своє малюємо через `LevelRenderEvents` | Ціль підтверджена. **Обсяг може скоротитись:** у 26.2 погода має `WeatherRenderState` у extract-фазі. Якщо раунд 2 покаже, що стан можна наповнити своїми даними через `FabricRenderState`/`RenderStateDataKey`, міксин зведеться до чистого скасування — або зникне зовсім. |
-| **M5** | `net.minecraft.client.renderer.fog.FogRenderer` ⚠️ **під питанням** | Дальність видимості від опадів + незалежна вісь туману | У 26.2 туман — плагінна стратегія `FogEnvironment` (7 ванільних реалізацій). Якщо реєстр відкритий, **міксин не потрібен узагалі** — реєструємо свій `FogEnvironment`. Рішення після раунду 2. |
-| **M6** | `net.minecraft.server.commands.WeatherCommand#register` ✅ | Скасувати реєстрацію ванільної команди й підставити свою з тим самим синтаксисом | Brigadier не має публічного API для видалення зареєстрованого вузла. Альтернатива — accessor-міксин на приватну мапу `children` у `CommandNode`, що гірше: лізе в чужу структуру. Скасувати реєстрацію на HEAD акуратніше. |
+Усі цілі нижче **перевірені по декомпільованих джерелах 26.2**, не по пам'яті.
 
-**Разом 4–6 міксинів** — M5 імовірно зникне, M4 може скоротитись до однорядкового
-скасування. Остаточно — після раунду 2.
+| # | Ціль | Тип | Навіщо / чому без міксина не можна |
+|---|---|---|---|
+| **M1** | `ServerLevel#advanceWeatherCycle()` | `@Inject HEAD cancellable` | Заглушити ванільні таймери й розсилку `RAIN_LEVEL_CHANGE`/`THUNDER_LEVEL_CHANGE`. Події «до тіку погоди» у Fabric API немає; ґеймрул `ADVANCE_WEATHER` морозить стан, а не віддає його нам, і його видно гравцю. |
+| **M2** | `Level#precipitationAt(BlockPos)` | `@Inject HEAD cancellable` | **Одна точка на весь ванільний геймплей.** `isRainingAt` делегує сюди, а від нього залежать гасіння вогню, ріст врожаю, казан, риболовля, спавн. Патчити їх поодинці — десяток міксинів замість одного. |
+| **M3** | `Level#getRainLevel(float)`, `#getThunderLevel(float)` | `@Inject HEAD cancellable` | Інтенсивність у точці гравця. Дає **безкоштовно**: `intensity` у extract-фазі погоди, стиснення туману в `AtmosphericFogEnvironment`, затемнення неба, гучність. Без API. |
+| **M4** | `ClientLevel#getPrecipitationAt(BlockPos)` | `@Inject HEAD cancellable` | Клієнтський двійник M2 — інша назва, окремий метод. Ним керується і рендер колонок, і бризки, і звук дощу. Саме він робить **межу зони видимою здалеку**, бо ванільний цикл extract уже перебирає весь радіус. |
+| **M5** | `WeatherEffectRenderer#extractRenderState` | `@Redirect` на виклик `options.weatherRadius().get()` | Підмінити радіус рендеру погоди на наш конфігурований. Три рядки — решту (перебір колонок, сніг/дощ, освітлення) робить ваніль. |
+| **M6** | `WeatherEffectRenderer#render` | `@Inject HEAD cancellable` | Свій draw заради **нахилу опадів за вітром**: запис `ColumnInstance` поля нахилу не має, тож вершини треба будувати самим. Пайплайн, таргет, формат і текстури беремо ванільні — свого шейдера немає. |
+| **M7** | `FogRenderer#setupFog` | `@Inject RETURN` | Незалежна вісь туману. П'ять рядків: мутуємо `FogData` з `cir.getReturnValue()`. Приватний список `FOG_ENVIRONMENTS` не чіпаємо. |
+| **M8** | `WeatherCommand#register` | `@Inject HEAD cancellable` | Brigadier не має публічного API для видалення зареєстрованого вузла. Accessor на приватну мапу `children` у `CommandNode` гірший — лізе в чужу структуру. |
+
+**Разом 8 міксинів замість 6** — але кожен дрібний, і сумарно коду **менше**, ніж у
+попередньому плані: замість власного циклу рендеру ми перевикористовуємо ванільний, а
+туман від опадів і затемнення неба взагалі не пишемо. Найбільший із восьми — M6, і той
+здебільшого копія ванільного `renderInstances` з доданим нахилом.
+
+M4 і M6 можуть ще зникнути за результатами раунду 3 (якщо `ClientLevel.getPrecipitationAt`
+делегує в `Level.precipitationAt`, і якщо `LevelRenderEvents` дає фазу для малювання).
 
 ### Де міксини свідомо НЕ потрібні
 
@@ -480,8 +569,8 @@ new_minecraft_weather/
 | Ризик | Наслідок | Мітигація |
 |---|---|---|
 | **Імена класів 26.2** | Не компілюється / міксин не знаходить ціль | ✅ Знято раундом 1: усі ключові класи знайдено в реальних декомпільованих джерелах. Лишились сигнатури — раунд 2. |
-| **Blaze3D API для власного пайплайна** | Був найбільшим ризиком: чи взагалі можна зробити свій пайплайн без сирого GL | ✅ **Знято.** `RenderPipeline.Builder` публічний, з `withVertexShader/withFragmentShader(Identifier)`, `withBindGroupLayout`, `withVertexBinding` тощо, і Fabric інжектить у нього `FabricRenderPipeline`. Сирий GL не потрібен. План B (перевикористати ванільний пайплайн погоди) лишається як дешевший варіант — перевіримо в раунді 2. |
-| **Vulkan-стиль уніформ (bind groups / std140)** | Новий для мене спосіб передавати параметри в шейдер | `Std140Builder` / `Std140SizeCalculator` є в Blaze3D. Якщо перевикористаємо ванільний пайплайн погоди — власних уніформ не буде взагалі, і питання зникає. |
+| **Blaze3D API для власного пайплайна** | Був найбільшим ризиком | ✅ **Знято повністю.** Власний пайплайн не потрібен узагалі: беремо ванільні `RenderPipelines.WEATHER_DEPTH_WRITE` / `WEATHER_NO_DEPTH_WRITE`, `DefaultVertexFormat.PARTICLE`, `OutputTarget.WEATHER_TARGET` і ванільні текстури дощу/снігу. Ні свого шейдера, ні своїх уніформ, ні сирого GL. |
+| **Рендер опадів на всю дальність** | Була думка, що доведеться писати свій цикл із LOD | ✅ Спрощено: радіус рендеру погоди у 26.2 — **ванільна клієнтська опція** `options.weatherRadius()`, і ванільний extract уже перебирає весь радіус. Ми лише підміняємо число (M5) і робимо `getPrecipitationAt` позиційним (M4). Ліміт колонок і спад щільності з відстанню лишаються в конфігу як запобіжник. |
 | **Рендер опадів на всю дальність дорожчий за ванільний** | Просадка FPS при 32 чанках | LOD: щільність стовпців падає з відстанню, дальні зони — розріджена «стіна» замість повної сітки; жорсткий ліміт `render.max_columns`; усі буфери преаловані. |
 | **Роздільність сітки vs різкість межі** | Розмита стіна дощу | Інваріант `blend_band_min >= 2 × grid.step` з валідацією в конфігу; `grid.step` налаштовний. |
 | **`isRaining()`/`isThundering()` глобальні за природою** | Затемнення неба й освітлення для спавну лишаються приблизними на сервері | M3 повертає значення з семпла в точці гравця: для клієнта точно, для серверних перевірок спавну — наближено. Прийнято усвідомлено, буде в README. |
