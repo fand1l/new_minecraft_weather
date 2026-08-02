@@ -11,6 +11,7 @@ import com.fand1l.vibeweather.api.WeatherState;
 import com.fand1l.vibeweather.util.MathUtil;
 import com.fand1l.vibeweather.weather.FogRules;
 import com.fand1l.vibeweather.weather.GridCodec;
+import com.fand1l.vibeweather.weather.WeatherGridBuilder;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
 import com.fand1l.vibeweather.weather.ZoneBlender;
@@ -487,6 +488,73 @@ public final class ModelHarness {
 		System.out.println("        " + nodes + " nodes = " + bytes + " bytes ("
 				+ (bytes / 1024) + " KiB) for the one-off full send, "
 				+ GridCodec.byteLength(2 * 27 + 1) + " bytes for a one-row delta");
+
+		System.out.println("\n[21] the grid is anchored to the world, not to the player");
+		List<WeatherZone> gridZones = List.of(new WeatherZone(700L, 0, 0, 400, 140, 0, 0,
+				new WeatherState(1.0F, 0.8F, 0.0F, 0.0F, 0.5F, 45.0F), Long.MAX_VALUE, Long.MAX_VALUE, r));
+
+		WeatherGridBuilder.Grid atOrigin =
+				WeatherGridBuilder.build(gridZones, 0, 0, 27, 16.0, 192, 224, r);
+		// Move a fraction of a step. A player-anchored grid would shift and invalidate everything.
+		WeatherGridBuilder.Grid nudged =
+				WeatherGridBuilder.build(gridZones, 7.0, 3.0, 27, 16.0, 192, 224, r);
+
+		check("a sub-step move leaves the lattice origin alone",
+				atOrigin.originNodeX() == nudged.originNodeX()
+						&& atOrigin.originNodeZ() == nudged.originNodeZ(),
+				atOrigin.originNodeX() + "," + atOrigin.originNodeZ() + " vs "
+						+ nudged.originNodeX() + "," + nudged.originNodeZ());
+		check("and produces an identical grid", java.util.Arrays.equals(atOrigin.data(), nudged.data()),
+				"grid changed after a 7-block step");
+
+		WeatherGridBuilder.Delta unchanged = WeatherGridBuilder.diff(atOrigin, nudged, 0.4F);
+		check("so the delta is empty", !unchanged.full() && unchanged.changes().isEmpty(),
+				unchanged.changes().size() + " changes");
+
+		System.out.println("\n[22] walking one step exposes one row and nothing else");
+		WeatherGridBuilder.Grid moved =
+				WeatherGridBuilder.build(gridZones, 16.0, 0, 27, 16.0, 192, 224, r);
+		WeatherGridBuilder.Delta rowDelta = WeatherGridBuilder.diff(atOrigin, moved, 0.4F);
+
+		check("the delta is a patch, not a full resend", !rowDelta.full(), "fell back to full");
+		check("only one column of nodes is new", rowDelta.changes().size() <= moved.side(),
+				rowDelta.changes().size() + " changes for a " + moved.side() + "-node column");
+		System.out.println("        " + rowDelta.changes().size() + " nodes = "
+				+ rowDelta.byteLength() + " bytes, against "
+				+ moved.data().length + " for a full send");
+
+		System.out.println("\n[23] applying a delta reproduces the server's grid exactly");
+		WeatherGridBuilder.Grid rebuilt = WeatherGridBuilder.apply(atOrigin, rowDelta);
+		check("client copy matches the server byte for byte",
+				java.util.Arrays.equals(rebuilt.data(), moved.data()), "mismatch after applying the delta");
+		check("origins match", rebuilt.originNodeX() == moved.originNodeX()
+				&& rebuilt.originNodeZ() == moved.originNodeZ(), "origin mismatch");
+
+		System.out.println("\n[24] a teleport falls back to a full send instead of a huge patch");
+		WeatherGridBuilder.Grid faraway =
+				WeatherGridBuilder.build(gridZones, 100_000, 100_000, 27, 16.0, 192, 224, r);
+		WeatherGridBuilder.Delta jump = WeatherGridBuilder.diff(atOrigin, faraway, 0.4F);
+		check("no overlap means a full send", jump.full(), "tried to patch a disjoint grid");
+		check("a full send costs the grid, not the grid plus indices",
+				jump.byteLength() == faraway.data().length, String.valueOf(jump.byteLength()));
+
+		WeatherGridBuilder.Grid firstEver =
+				WeatherGridBuilder.diff(null, atOrigin, 0.4F).grid();
+		check("a client with no grid at all gets a full send",
+				WeatherGridBuilder.diff(null, atOrigin, 0.4F).full() && firstEver != null, "not full");
+
+		System.out.println("\n[25] the grid actually describes the zone it covers");
+		int centreIndex = atOrigin.indexOf(0, 0);
+		WeatherSample centreSample = atOrigin.sampleAt(centreIndex, 1.0F);
+		int cornerIndex = atOrigin.indexOf(atOrigin.originNodeX(), atOrigin.originNodeZ());
+		WeatherSample cornerSample = atOrigin.sampleAt(cornerIndex, 1.0F);
+
+		check("the node at the zone core reports full coverage", centreSample.coverage() > 0.99F,
+				String.valueOf(centreSample.coverage()));
+		check("the node at the zone core reports precipitation", centreSample.state().precip() > 0.5F,
+				String.valueOf(centreSample.state().precip()));
+		check("a corner far outside the zone reports clear", cornerSample.coverage() == 0.0F,
+				String.valueOf(cornerSample.coverage()));
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
