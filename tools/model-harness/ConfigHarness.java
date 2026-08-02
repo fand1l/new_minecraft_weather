@@ -132,6 +132,14 @@ public final class ConfigHarness {
 				"bad transitions");
 		check("rain level mode parses", cfg.serverRainLevelMode() == VibeWeatherConfig.RainLevelMode.MAX,
 				String.valueOf(cfg.serverRainLevelMode()));
+		check("permission tier parses", cfg.permissionTier() == VibeWeatherConfig.PermissionTier.GAMEMASTERS,
+				String.valueOf(cfg.permissionTier()));
+
+		ConfigManager badTier = withFile("{ \"commands\": { \"permission_tier\": \"LEVEL_2\" } }");
+		ConfigManager.Result tierResult = badTier.reload();
+		check("an unknown permission tier is rejected", !tierResult.applied(), "accepted");
+		check("the message lists the valid tiers", tierResult.message().contains("GAMEMASTERS"),
+				tierResult.message());
 
 		System.out.println("\n[8] writing then reading gives back the same values");
 		cfg.zones.minRadius = 200.0;

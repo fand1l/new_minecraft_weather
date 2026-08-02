@@ -254,14 +254,166 @@ GameRules.MAX_SNOW_ACCUMULATION_HEIGHT, SnowLayerBlock.LAYERS, Block.pushEntitie
 
 ---
 
+## Персистенція
+
+```java
+// net.minecraft.world.level.saveddata.SavedData
+public abstract class SavedData {
+    public void setDirty();  public void setDirty(boolean);  public boolean isDirty();
+}
+
+// record — рівно чотири компоненти, без перевантажень
+public record SavedDataType<T extends SavedData>(Identifier id, Supplier<T> constructor,
+                                                 Codec<T> codec, DataFixTypes dataFixType) {}
+
+// net.minecraft.server.level.ServerLevel — сховище Є на рівень виміру
+public SavedDataStorage getDataStorage();          // = getChunkSource().getDataStorage()
+// вжиток у ванілі: getDataStorage().computeIfAbsent(Raids.TYPE)
+//                  getDataStorage().computeIfAbsent(WorldBorder.TYPE)
+```
+
+## Мережа
+
+```java
+// net.minecraft.network.protocol.common.custom.CustomPacketPayload
+record Type<T extends CustomPacketPayload>(Identifier id) {}
+static <T> Type<T> createType(String id);      // УВАГА: підставляє withDefaultNamespace -> minecraft:
+                                               // для свого namespace конструюємо Type напряму
+static <B extends ByteBuf, T> StreamCodec<B, T> codec(StreamMemberEncoder<B,T> w, StreamDecoder<B,T> r);
+
+// net.minecraft.network.codec.ByteBufCodecs
+StreamCodec<ByteBuf, byte[]>  BYTE_ARRAY;
+StreamCodec<ByteBuf, Integer> INT, VAR_INT;
+StreamCodec<ByteBuf, Float>   FLOAT;
+StreamCodec<ByteBuf, Boolean> BOOL;
+
+// net.minecraft.network.codec.StreamCodec
+static <B,V> StreamCodec<B,V> of(StreamEncoder<B,V>, StreamDecoder<B,V>);
+static composite(...)   // перевантаження на 1..12 компонентів
+
+// Fabric
+PayloadTypeRegistry.clientboundPlay() / serverboundPlay()      // <RegistryFriendlyByteBuf>
+    <T> CustomPacketPayload.TypeAndCodec<? super B, T> register(Type<T>, StreamCodec<? super B, T>);
+    <T> ... registerLarge(Type<T>, StreamCodec<? super B, T>, int maxPacketSize);
+```
+
+`registerLarge` — саме те, що треба для повної сітки: 24 КБ інакше впирається у ванільний
+ліміт розміру пакета. Дельти йдуть звичайним `register`.
+
+## Команди — рівні прав більше НЕ цілі числа
+
+```java
+// net.minecraft.commands.Commands
+public static final PermissionCheck LEVEL_ALL, LEVEL_MODERATORS, LEVEL_GAMEMASTERS,
+                                    LEVEL_ADMINS, LEVEL_OWNERS;
+// LEVEL_GAMEMASTERS = new PermissionCheck.Require(Permissions.COMMANDS_GAMEMASTER)
+public static LiteralArgumentBuilder<CommandSourceStack> literal(String literal);
+public static <T> RequiredArgumentBuilder<CommandSourceStack, T> argument(String name, ArgumentType<T> type);
+public static <T extends PermissionSetSupplier> PermissionProviderCheck<T> hasPermission(PermissionCheck permission);
+
+// net.minecraft.commands.CommandSourceStack
+public Vec3 getPosition();
+public ServerLevel getLevel();
+public @Nullable Entity getEntity();
+public ServerPlayer getPlayerOrException() throws CommandSyntaxException;
+public void sendSuccess(Supplier<Component> messageSupplier, boolean broadcast);
+public void sendFailure(Component message);
+```
+
+Доступні типи аргументів: `Vec3Argument`, `BlockPosArgument`, `AngleArgument`,
+`IdentifierArgument`, `DimensionArgument`, `TimeArgument`, плюс брігадірівські
+`FloatArgumentType`, `IntegerArgumentType`, `StringArgumentType`.
+
+## Реєстри
+
+```java
+BuiltInRegistries.ENTITY_TYPE   : DefaultedRegistry<EntityType<?>>   // дефолт "pig"!
+BuiltInRegistries.PARTICLE_TYPE : Registry<ParticleType<?>>
+
+// net.minecraft.core.Registry
+default Optional<T> getOptional(@Nullable Identifier key);
+Optional<Holder.Reference<T>> get(Identifier id);
+```
+
+`ENTITY_TYPE` — **defaulted**, тобто на невідомий ID поверне свиню. Для конфігу треба
+`getOptional(...)`, щоб друкарську помилку було видно, а не мовчки отримати свиню.
+
+## Сутності й рівень
+
+```java
+// net.minecraft.world.entity.Entity
+public boolean isSpectator();                       // рядок 345
+public @Nullable LivingEntity getControllingPassenger();
+public final boolean hasControllingPassenger();
+public Vec3 position();
+
+// net.minecraft.world.entity.LivingEntity
+public boolean isFallFlying();                      // рядок 3630 — політ на елітрах
+public int getFallFlyingTicks();
+public void stopFallFlying();
+// також Pose.FALL_FLYING, DataComponents.GLIDER, BlockTags.CAN_GLIDE_THROUGH
+
+// net.minecraft.world.entity.player.Player
+public Abilities getAbilities();                    // рядок 1291
+public boolean isSpectator();                       // перевизначає Entity
+public boolean isCreative();
+
+// net.minecraft.world.entity.player.Abilities  — публічні ПОЛЯ, не геттери
+public boolean invulnerable, flying, mayfly, instabuild, mayBuild;
+
+// човни — переїхали в підпакет boat
+net.minecraft.world.entity.vehicle.boat.{AbstractBoat, Boat, Raft, ChestBoat, ChestRaft, AbstractChestBoat}
+
+// net.minecraft.world.level.Level
+public boolean isClientSide();
+public DimensionType dimensionType();
+public boolean canHaveWeather();   // = dimensionType().hasSkyLight() && !hasCeiling() && dimension() != END
+
+// net.minecraft.server.level.ServerLevel
+public List<ServerPlayer> players();
+public List<ServerPlayer> getPlayers(Predicate<? super ServerPlayer> selector);
+public long getSeed();
+public MinecraftServer getServer();
+
+// net.minecraft.world.entity.EntityType
+public @Nullable T create(Level level, EntitySpawnReason reason);
+```
+
+**Nether і End задарма**: `Level.canHaveWeather()` уже виключає їх — власної перевірки
+вимірів писати не треба.
+
+## Render-state API (підтверджує рішення не використовувати його для погоди)
+
+```java
+// net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey<T>
+public static <T> RenderStateDataKey<T> create(Supplier<String> debugName);
+public static <T> RenderStateDataKey<T> create();
+// разом із FabricRenderState.getData(key) / setData(key, value)
+```
+
+`LevelRenderEvents` має фази `START_MAIN`, `AFTER_OPAQUE_TERRAIN`, `COLLECT_SUBMITS`,
+`AFTER_SOLID_FEATURES`, `AFTER_TRANSLUCENT_FEATURES`, `BEFORE_BLOCK_OUTLINE`,
+`BEFORE_GIZMOS`, `BEFORE_TRANSLUCENT_TERRAIN`, `AFTER_TRANSLUCENT_TERRAIN`, `END_MAIN`.
+**Фази для погоди серед них немає** — вона малюється окремим frame-graph-проходом у свій
+таргет. Тому M6 лишається міксином, як і планувалось.
+
 ## Ще НЕ перевірено
 
 Не використовувати, поки не підтверджено дампом:
 
-- `SavedData` / `SavedDataType` — конструктор і як дістати сховище для **виміру**
-  (у ванілі погода глобальна на сервер, тож `ServerLevel.getDataStorage()` не бачив);
-- `CustomPacketPayload.Type` — як конструюється; `StreamCodec` / `ByteBufCodecs` для `byte[]`;
-- `BuiltInRegistries.ENTITY_TYPE` — точний спосіб дістати тип за `Identifier`;
-- перевірка польоту на елітрах (`isFallFlying` / `isGliding` на `LivingEntity`);
-- `isSpectator()` і доступ до абілок польоту гравця;
-- клас човна (обходимо через список ID реєстру в конфігу — імені не потребуємо).
+Лишився **один** пункт:
+
+- **`DataFixTypes` для власного `SavedDataType`.** Це enum суто ванільних значень
+  (`SAVED_DATA_RAIDS`, `SAVED_DATA_WEATHER`, …), а компонент у record обов'язковий.
+  Підставляти чуже значення не можна — на наші дані поїдуть ванільні датафіксери.
+  Чи приймає `SavedDataStorage` тут `null`, я **не перевіряв**: класу
+  `SavedDataStorage.java` у дампі немає (шукав під старим ім'ям `DimensionDataStorage`).
+
+  Перевірити одним ґрепом:
+  ```bash
+  rg -n "dataFixType|DataFixTypes|SavedDataType" \
+     ~/.gradle/caches/fabric-loom --glob 'SavedDataStorage.java' | head -20
+  ```
+
+  Поки не перевірено — тримаю це значення єдиною константою в одному місці з поміткою,
+  щоб виправлення було в один рядок.

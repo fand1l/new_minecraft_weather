@@ -152,10 +152,15 @@ public final class VibeWeatherConfig {
 		public double maxPushPerTick = 0.05;
 		public double leafDrift = 0.02;
 		/**
-		 * Entity types the boat rule applies to, as registry ids.
+		 * Extra entity types the boat rule applies to, as registry ids.
 		 *
-		 * <p>Ids rather than a class check, so this survives Mojang renaming the boat class -- as
-		 * happened in 26.2 -- and lets modded boats opt in without a code change.
+		 * <p>Vanilla boats are matched by class ({@code vehicle.boat.AbstractBoat}, which moved into
+		 * its own subpackage in 26.2), so this list exists for modded vehicles that do not extend it.
+		 * The vanilla ids are listed anyway: matching either way costs nothing and makes the rule
+		 * visible to anyone reading the config rather than hidden in a class check.
+		 *
+		 * <p>Unknown ids are reported rather than ignored -- the entity registry is defaulted and
+		 * silently answers with a pig for anything it does not recognise.
 		 */
 		public List<String> boatEntityTypes = new ArrayList<>(List.of(
 				"minecraft:oak_boat",
@@ -220,7 +225,19 @@ public final class VibeWeatherConfig {
 
 	/** Command behaviour. */
 	public static final class Commands {
-		public int permissionLevel = 2;
+		/**
+		 * Which vanilla permission tier the command requires.
+		 *
+		 * <p>A name, not the integer the brief specified, because 26.2 no longer expresses command
+		 * permissions as levels: {@code Commands.LEVEL_GAMEMASTERS} and friends are
+		 * {@code PermissionCheck} objects wrapping named permissions, and there is no integer to
+		 * pass. {@code GAMEMASTERS} is the tier vanilla {@code /weather} itself uses, and is the
+		 * direct equivalent of the requested level 2.
+		 *
+		 * <p>One of {@code ALL}, {@code MODERATORS}, {@code GAMEMASTERS}, {@code ADMINS},
+		 * {@code OWNERS}.
+		 */
+		public String permissionTier = "GAMEMASTERS";
 		/** Radius the intercepted vanilla /weather applies to, in blocks. */
 		public double vanillaWeatherRadius = 512.0;
 		public double defaultSetRadius = 256.0;
@@ -337,6 +354,7 @@ public final class VibeWeatherConfig {
 		}
 
 		serverRainLevelMode();
+		permissionTier();
 
 		// Building these runs their validating constructors.
 		toRules();
@@ -358,5 +376,26 @@ public final class VibeWeatherConfig {
 		MAX,
 		NEAREST_PLAYER,
 		OFF
+	}
+
+	public PermissionTier permissionTier() {
+		try {
+			return PermissionTier.valueOf(commands.permissionTier.toUpperCase(java.util.Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			throw new IllegalArgumentException("commands.permission_tier must be one of ALL, MODERATORS, "
+					+ "GAMEMASTERS, ADMINS, OWNERS; got '" + commands.permissionTier + "'");
+		}
+	}
+
+	/**
+	 * Mirrors the vanilla permission tiers. Named rather than numbered because 26.2 replaced integer
+	 * command levels with {@code PermissionCheck} objects; see {@link Commands#permissionTier}.
+	 */
+	public enum PermissionTier {
+		ALL,
+		MODERATORS,
+		GAMEMASTERS,
+		ADMINS,
+		OWNERS
 	}
 }
