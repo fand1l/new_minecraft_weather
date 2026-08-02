@@ -420,10 +420,10 @@ new_minecraft_weather/
 │                                             │                                           │
 │         ┌───────────────────────────────────┼───────────────────────────────┐           │
 │         ▼                    ▼              ▼               ▼               ▼           │
-│  LightningDriver   PrecipitationEffects  WindPhysics   LevelIsRainingAt  WeatherGrid-   │
-│  (лише прогружені   (казан, шари снігу)   Server        Mixin (ванільний   Builder      │
-│   чанки)                                  (моби,        геймплей)         (сітка        │
-│                                            стріли)                         семплів)     │
+│  M10 tickThunder   M9 tickPrecipitation  WindPhysics   M2 precipitationAt WeatherGrid-  │
+│  (лише частота —   (гейт + прискорене     Server       (весь ванільний    Builder       │
+│   локальність і     накопичення казана    (моби,        геймплей стає      (сітка        │
+│   прогрузку дає      й шарів снігу)        стріли)       локальним)         семплів)     │
 │                                                                                │        │
 │                                                                    WeatherSync │        │
 └────────────────────────────────────────────────────────────────────────────────┼────────┘
