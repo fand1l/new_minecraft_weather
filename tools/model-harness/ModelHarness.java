@@ -8,10 +8,13 @@ import com.fand1l.vibeweather.api.ThunderLevel;
 import com.fand1l.vibeweather.api.WeatherRules;
 import com.fand1l.vibeweather.api.WeatherSample;
 import com.fand1l.vibeweather.api.WeatherState;
+import com.fand1l.vibeweather.util.MathUtil;
 import com.fand1l.vibeweather.weather.FogRules;
+import com.fand1l.vibeweather.weather.GridCodec;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
 import com.fand1l.vibeweather.weather.ZoneBlender;
+import com.fand1l.vibeweather.weather.ZoneManager;
 import com.fand1l.vibeweather.weather.ZoneSpawnParams;
 
 /** Checks the two invariants that were broken in review, plus the surrounding contract. */
@@ -356,6 +359,134 @@ public final class ModelHarness {
 
 		check("the dawn window wraps past midnight", fog.isDawn(23500L) && fog.isDawn(500L) && !fog.isDawn(12000L),
 				"dawn window did not wrap");
+
+		System.out.println("\n[15] zones are born outside the view and never on top of a player");
+		ZoneManager manager = new ZoneManager();
+		ZoneManager.Settings settings = ZoneManager.Settings.defaults();
+		WeatherTransitions live = WeatherTransitions.defaults(new Random(4242L));
+		Random spawnRng = new Random(4242L);
+		List<ZoneManager.Anchor> anchors = List.of(new ZoneManager.Anchor(0, 0, 256.0));
+
+		boolean neverCoversAnchor = true;
+
+		for (int i = 0; i < 2000; i++) {
+			WeatherZone spawned = manager.spawnNear(anchors.get(0), 0L, r, live, params, spawnRng);
+
+			// The near edge, not just the centre, must clear the horizon -- otherwise a large zone
+			// spawned just out of sight would still swallow the player on its first tick.
+			if (spawned.weightAt(0, 0) > 0.0F) {
+				neverCoversAnchor = false;
+			}
+		}
+
+		check("a freshly spawned zone never reaches the player", neverCoversAnchor,
+				"a new zone covered the anchor");
+
+		System.out.println("\n[16] the zone population converges and stays capped");
+		ZoneManager pop = new ZoneManager();
+
+		for (long tick = 1; tick <= 4000; tick++) {
+			pop.tick(tick, anchors, r, live, params, settings, false, spawnRng);
+		}
+
+		check("population reaches the target for one player",
+				pop.size() >= settings.targetZonesPerAnchor(),
+				"only " + pop.size() + " zones");
+		check("population does not run away", pop.size() <= settings.maxZones(),
+				pop.size() + " zones exceeds the cap");
+		System.out.println("        " + pop.size() + " zones around one player after 4000 ticks");
+
+		ZoneManager capped = new ZoneManager();
+		ZoneManager.Settings tight = new ZoneManager.Settings(50, 5, 2048.0, 72000L);
+
+		for (long tick = 1; tick <= 3000; tick++) {
+			capped.tick(tick, anchors, r, live, params, tight, false, spawnRng);
+		}
+
+		check("the hard cap is respected even when the target exceeds it", capped.size() <= 5,
+				String.valueOf(capped.size()));
+
+		System.out.println("\n[17] zones nobody visits are retired");
+		ZoneManager abandoned = new ZoneManager();
+
+		for (long tick = 1; tick <= 600; tick++) {
+			abandoned.tick(tick, anchors, r, live, params, settings, false, spawnRng);
+		}
+
+		int beforeLeaving = abandoned.size();
+		check("zones exist while a player is present", beforeLeaving > 0, "none spawned");
+
+		// Everyone logs out: no anchors at all, so nothing is ever marked as seen again.
+		for (long tick = 601; tick <= 601 + settings.unloadedTtlTicks() + 100; tick++) {
+			abandoned.tick(tick, List.of(), r, live, params, settings, false, spawnRng);
+		}
+
+		check("they are dropped once the time-to-live expires", abandoned.size() == 0,
+				abandoned.size() + " zones survived with no players");
+		System.out.println("        " + beforeLeaving + " zones -> 0 after the ttl elapsed with nobody online");
+
+		System.out.println("\n[18] freezing stops weather changing but not the wind");
+		ZoneManager frozen = new ZoneManager();
+		WeatherZone drifting = new WeatherZone(900L, 0, 0, 300, 100, 0.02, 0.0,
+				new WeatherState(1.0F, 1.0F, 0.0F, 0.0F, 0.5F, 90.0F), 0L, Long.MAX_VALUE, r);
+		frozen.add(drifting);
+		WeatherState stateBefore = drifting.state();
+		double xBefore = drifting.centerX();
+
+		for (long tick = 1; tick <= 500; tick++) {
+			frozen.tick(tick, anchors, r, live, params, settings, true, spawnRng);
+		}
+
+		check("the weather state is unchanged while frozen", drifting.state().equals(stateBefore),
+				stateBefore + " became " + drifting.state());
+		check("the zone still drifts while frozen", drifting.centerX() > xBefore + 1.0,
+				"moved " + (drifting.centerX() - xBefore) + " blocks");
+		check("no new zones appear while frozen", frozen.size() == 1, String.valueOf(frozen.size()));
+
+		System.out.println("\n[19] grid nodes survive the eight-byte round trip");
+		byte[] buffer = new byte[GridCodec.byteLength(3)];
+		Random codecRng = new Random(31337L);
+		float worstUnit = 0.0F;
+		float worstAngle = 0.0F;
+
+		for (int i = 0; i < 100_000; i++) {
+			WeatherSample original = new WeatherSample(
+					new WeatherState(codecRng.nextFloat(), codecRng.nextFloat(), codecRng.nextFloat(),
+							codecRng.nextFloat(), codecRng.nextFloat(), codecRng.nextFloat() * 360.0F)
+							.sanitize(r),
+					codecRng.nextFloat(),
+					1.0F);
+
+			GridCodec.pack(original, buffer, GridCodec.NODE_BYTES);
+			WeatherSample decoded = GridCodec.unpack(buffer, GridCodec.NODE_BYTES, 1.0F);
+
+			worstUnit = Math.max(worstUnit, Math.abs(decoded.state().clouds() - original.state().clouds()));
+			worstUnit = Math.max(worstUnit, Math.abs(decoded.state().precip() - original.state().precip()));
+			worstUnit = Math.max(worstUnit, Math.abs(decoded.state().thunder() - original.state().thunder()));
+			worstUnit = Math.max(worstUnit, Math.abs(decoded.state().fog() - original.state().fog()));
+			worstUnit = Math.max(worstUnit, Math.abs(decoded.coverage() - original.coverage()));
+			worstAngle = Math.max(worstAngle, Math.abs(MathUtil.angleDelta(
+					original.state().windDirection(), decoded.state().windDirection())));
+		}
+
+		check("intensity error stays within one quantisation step", worstUnit <= GridCodec.unitError() + 1e-6F,
+				"worst " + worstUnit + " allowed " + GridCodec.unitError());
+		check("bearing error stays within one quantisation step",
+				worstAngle <= GridCodec.angleErrorDegrees() + 1e-4F,
+				"worst " + worstAngle + " allowed " + GridCodec.angleErrorDegrees());
+		System.out.println("        worst intensity error " + worstUnit + ", worst bearing error "
+				+ worstAngle + " deg");
+
+		check("a node writes exactly eight bytes and touches no neighbour",
+				buffer[0] == 0 && buffer[GridCodec.NODE_BYTES * 2] == 0, "wrote outside its slot");
+
+		System.out.println("\n[20] a full default grid stays a sane packet size");
+		int nodes = (2 * 27 + 1) * (2 * 27 + 1);
+		int bytes = GridCodec.byteLength(nodes);
+		check("the full grid fits comfortably under 32 KiB", bytes < 32 * 1024, bytes + " bytes");
+		System.out.println("        " + nodes + " nodes = " + bytes + " bytes ("
+				+ (bytes / 1024) + " KiB) for the one-off full send, "
+				+ GridCodec.byteLength(2 * 27 + 1) + " bytes for a one-row delta");
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

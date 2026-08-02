@@ -48,6 +48,7 @@ public final class WeatherZone {
 	private Phase phase;
 	private long stateExpiryTick;
 	private long deathTick;
+	private long lastSeenTick;
 
 	public WeatherZone(
 			long id,
@@ -191,6 +192,25 @@ public final class WeatherZone {
 
 	public boolean isDead(long gameTick) {
 		return gameTick >= deathTick;
+	}
+
+	/**
+	 * Records that a player was within range this tick.
+	 *
+	 * <p>Drives retirement of zones in regions nobody visits any more. Without it, saved data would
+	 * accumulate a zone for every place a player has ever been.
+	 */
+	public void markSeen(long gameTick) {
+		lastSeenTick = Math.max(lastSeenTick, gameTick);
+	}
+
+	public long lastSeenTick() {
+		return lastSeenTick;
+	}
+
+	/** Restores the last-seen tick when loading from disk. */
+	public void setLastSeenTick(long tick) {
+		lastSeenTick = tick;
 	}
 
 	/** Extends the zone's life, used when a command override should outlive its natural span. */
