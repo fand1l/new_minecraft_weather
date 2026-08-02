@@ -8,9 +8,11 @@ import com.fand1l.vibeweather.api.ThunderLevel;
 import com.fand1l.vibeweather.api.WeatherRules;
 import com.fand1l.vibeweather.api.WeatherSample;
 import com.fand1l.vibeweather.api.WeatherState;
+import com.fand1l.vibeweather.weather.FogRules;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
 import com.fand1l.vibeweather.weather.ZoneBlender;
+import com.fand1l.vibeweather.weather.ZoneSpawnParams;
 
 /** Checks the two invariants that were broken in review, plus the surrounding contract. */
 public final class ModelHarness {
@@ -261,6 +263,99 @@ public final class ModelHarness {
 		mixed.add(new WeatherZone(6L, 9000, 0, 100, 50, 0, 0, WeatherState.CLEAR, Long.MAX_VALUE, Long.MAX_VALUE, r));
 		check("one storm among clear zones keeps the gate open",
 				Math.abs(ZoneBlender.maxPrecip(mixed) - 0.9F) < 1e-6F, String.valueOf(ZoneBlender.maxPrecip(mixed)));
+
+		System.out.println("\n[11] zone radius is skewed to the middle, not uniform");
+		ZoneSpawnParams params = ZoneSpawnParams.defaults();
+		Random sizeRng = new Random(99L);
+		int middle = 0;
+		int extremes = 0;
+		double lowest = Double.MAX_VALUE;
+		double highest = 0.0;
+
+		for (int i = 0; i < 200_000; i++) {
+			double radius = params.rollRadius(sizeRng);
+			lowest = Math.min(lowest, radius);
+			highest = Math.max(highest, radius);
+
+			double t = (radius - params.minRadius()) / (params.maxRadius() - params.minRadius());
+
+			if (t > 0.4 && t < 0.6) {
+				middle++;
+			}
+
+			if (t < 0.1 || t > 0.9) {
+				extremes++;
+			}
+		}
+
+		check("radii stay inside the configured range",
+				lowest >= params.minRadius() && highest <= params.maxRadius(),
+				lowest + ".." + highest);
+		check("the middle fifth is far more common than both outer tenths",
+				middle > extremes * 2, "middle=" + middle + " extremes=" + extremes);
+		System.out.println("        middle fifth " + (middle / 2000) + "%, outer tenths "
+				+ (extremes / 2000) + "%");
+
+		System.out.println("\n[12] blend band fits inside every legal zone (the review blocker)");
+		boolean bandFits = true;
+		boolean bandResolvable = true;
+
+		for (double radius = params.minRadius(); radius <= params.maxRadius(); radius += 1.0) {
+			double band = params.blendBand(radius);
+
+			// Must leave a full-intensity core: a band wider than half the radius means the zone
+			// never reaches full strength anywhere, which is exactly what the old 96-block
+			// minimum did to a 64-block zone.
+			if (band > radius * 0.5 + 1e-9) {
+				bandFits = false;
+			}
+
+			// Must be wide enough for the sample grid to resolve the gradient.
+			if (band < 2.0 * params.gridStep() - 1e-9) {
+				bandResolvable = false;
+			}
+		}
+
+		check("band never exceeds half the radius, so a core always exists", bandFits, "band too wide");
+		check("band always spans at least two grid steps", bandResolvable, "band too narrow");
+		System.out.println("        min radius " + params.minRadius() + " -> band "
+				+ params.blendBand(params.minRadius()) + ", max radius " + params.maxRadius()
+				+ " -> band " + params.blendBand(params.maxRadius()));
+
+		boolean rejected = false;
+
+		try {
+			// 64 < 4 * 48: the combination the old defaults silently shipped.
+			new ZoneSpawnParams(64.0, 1024.0, 3, 0.35, 48.0, 0.02, 0.02, 768.0);
+		} catch (IllegalArgumentException expected) {
+			rejected = true;
+		}
+
+		check("an incompatible radius/grid-step pair is rejected at construction", rejected,
+				"the impossible config was accepted");
+
+		System.out.println("\n[13] zone drift is far slower than the wind the player feels");
+		double[] drift = params.drift(90.0F, 1.0F);
+		double perDay = Math.hypot(drift[0], drift[1]) * 24000.0;
+		check("a zone travels well under one kilometre per game day at full wind", perDay < 1000.0,
+				perDay + " blocks/day");
+		System.out.println("        full wind moves a zone " + Math.round(perDay) + " blocks per game day");
+
+		System.out.println("\n[14] fog is contextual and its chances compose without saturating");
+		FogRules fog = FogRules.defaults();
+		float quiet = fog.fogChance(FogRules.Context.NONE);
+		float afterRain = fog.fogChance(new FogRules.Context(100L, 6000L, false, false));
+		float everything = fog.fogChance(new FogRules.Context(100L, 23000L, true, true));
+
+		check("with no context fog is rare", quiet < 0.1F, String.valueOf(quiet));
+		check("just after rain fog is much more likely", afterRain > quiet * 3.0F,
+				quiet + " -> " + afterRain);
+		check("every context at once still stays a probability", everything < 1.0F && everything > afterRain,
+				String.valueOf(everything));
+		System.out.println("        quiet " + quiet + ", after rain " + afterRain + ", all contexts " + everything);
+
+		check("the dawn window wraps past midnight", fog.isDawn(23500L) && fog.isDawn(500L) && !fog.isDawn(12000L),
+				"dawn window did not wrap");
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
