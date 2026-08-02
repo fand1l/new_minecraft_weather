@@ -16,7 +16,17 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT="${REPO_ROOT}/dump-262-api-3.txt"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibeweather-dump3.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+
+# Everything below writes into $REPORT, so a failure mid-report would otherwise be
+# completely silent on the terminal -- which is how v1 of this script "did nothing".
+# fd 3 keeps a handle on the real stdout so the exit trap can always speak up.
+exec 3>&1
+trap 'code=$?; if [ "$code" -ne 0 ]; then
+        { echo "!! dump-262-api-3.sh failed (exit $code)."
+          echo "!! Last lines of $REPORT:"
+          tail -6 "$REPORT" 2>/dev/null || echo "   (no report written)"; } >&3
+      fi
+      rm -rf "$WORK"' EXIT
 
 GRADLE_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 MC="$WORK/mc"
@@ -36,17 +46,24 @@ done
 
 # ----------------------------------------------------------- Fabric API sources
 # Loom downloads -sources.jar for IDE support; prefer those over bytecode.
-API_SRC_JARS=$(find "$GRADLE_HOME/caches" -path '*fabric-api*' -name '*-sources.jar' 2>/dev/null | sort -u)
+API_SRC_JARS=$(find "$GRADLE_HOME/caches" "$REPO_ROOT/.gradle" \
+	-name '*sources*.jar' 2>/dev/null | grep -E 'fabric' | sort -u)
 for j in $API_SRC_JARS; do
 	unzip -o -q "$j" -d "$API" 'net/fabricmc/*' 2>/dev/null
 done
 API_SRC_COUNT=$(find "$API" -name '*.java' 2>/dev/null | wc -l)
 
-# Fallback: a javap new enough to read Java 25 class files.
+# Fallback: a javap new enough to read Java 25 class files. Gradle's own toolchain
+# JDK under ~/.gradle/jvms is the most likely place to find one, since Loom needed
+# Java 25 to build this project in the first place.
 API_CP=$(find "$GRADLE_HOME/caches/modules-2/files-2.1/net.fabricmc.fabric-api" \
 	-name '*.jar' 2>/dev/null | grep -Ev 'sources|javadoc' | tr '\n' ':')
 JAVAP=""
-for cand in "${JAVA_HOME:-}/bin/javap" $(ls -d /usr/lib/jvm/*/bin/javap /opt/*/bin/javap 2>/dev/null) "$(command -v javap)"; do
+for cand in "${JAVA_HOME:-}/bin/javap" \
+	$(ls -d "$GRADLE_HOME"/jvms/*/bin/javap 2>/dev/null) \
+	$(ls -d "$HOME"/.sdkman/candidates/java/*/bin/javap 2>/dev/null) \
+	$(ls -d /usr/lib/jvm/*/bin/javap /opt/*/bin/javap 2>/dev/null) \
+	"$(command -v javap)"; do
 	[ -x "$cand" ] || continue
 	if "$cand" -classpath "$API_CP" net.fabricmc.fabric.api.particle.v1.FabricParticleTypes >/dev/null 2>&1; then
 		JAVAP="$cand"
@@ -54,8 +71,14 @@ for cand in "${JAVA_HOME:-}/bin/javap" $(ls -d /usr/lib/jvm/*/bin/javap /opt/*/b
 	fi
 done
 
+# NOTE: each `local` gets its own line on purpose. Bash expands every word of a
+# `local` command before assigning any of them, so `local a="$1" b="$a/x"` reads
+# an unset `a` -- fatal under `set -u`. That is exactly what broke round 3 v1.
 dump() {
-	local root="$1" rel="$2" cap="${3:-400}" f="$root/$2"
+	local root="$1"
+	local rel="$2"
+	local cap="${3:-400}"
+	local f="$root/$rel"
 	echo "########################################################################"
 	echo "### $rel"
 	echo "########################################################################"
@@ -68,7 +91,11 @@ dump() {
 }
 
 grepf() {
-	local root="$1" rel="$2" pat="$3" cap="${4:-100}" f="$root/$2"
+	local root="$1"
+	local rel="$2"
+	local pat="$3"
+	local cap="${4:-100}"
+	local f="$root/$rel"
 	echo "--- GREP $rel   /$pat/"
 	if [ -f "$f" ]; then
 		grep -nE "$pat" "$f" | awk -v cap="$cap" 'NR<=cap {print} END {if (NR>cap) print "... [truncated, "NR" matches]"}'
