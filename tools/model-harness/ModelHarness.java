@@ -16,6 +16,7 @@ import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
 import com.fand1l.vibeweather.weather.ZoneBlender;
 import com.fand1l.vibeweather.weather.ZoneManager;
+import com.fand1l.vibeweather.weather.ZonePersistence;
 import com.fand1l.vibeweather.weather.ZoneSpawnParams;
 
 /** Checks the two invariants that were broken in review, plus the surrounding contract. */
@@ -555,6 +556,76 @@ public final class ModelHarness {
 				String.valueOf(centreSample.state().precip()));
 		check("a corner far outside the zone reports clear", cornerSample.coverage() == 0.0F,
 				String.valueOf(cornerSample.coverage()));
+
+		System.out.println("\n[26] zones survive a save and load unchanged");
+		ZoneManager saving = new ZoneManager();
+
+		for (long tick = 1; tick <= 3000; tick++) {
+			saving.tick(tick, anchors, r, live, params, settings, false, spawnRng);
+		}
+
+		// Put one zone mid-transition, so the phase and target are exercised rather than only
+		// the steady case a freshly spawned zone would give.
+		WeatherZone midFade = new WeatherZone(555L, 120, -80, 400, 140, 0.01, -0.005,
+				new WeatherState(1.0F, 0.8F, 0.4F, 0.2F, 0.6F, 275.0F), 50L, 99999L, r);
+		midFade.tick(60L, r, clearing, false);
+		saving.add(midFade);
+
+		String blob = ZonePersistence.toBase64(saving.zones(), saving.nextId());
+		ZonePersistence.Snapshot loaded = ZonePersistence.fromBase64(blob, r);
+
+		check("every zone comes back", loaded.zones().size() == saving.size(),
+				saving.size() + " saved, " + loaded.zones().size() + " loaded");
+		check("the id counter comes back", loaded.nextId() == saving.nextId(),
+				saving.nextId() + " vs " + loaded.nextId());
+
+		boolean fieldsMatch = true;
+
+		for (int i = 0; i < saving.size(); i++) {
+			WeatherZone before = saving.zones().get(i);
+			WeatherZone after = loaded.zones().get(i);
+
+			if (before.id() != after.id()
+					|| before.centerX() != after.centerX()
+					|| before.centerZ() != after.centerZ()
+					|| before.radius() != after.radius()
+					|| before.blendBand() != after.blendBand()
+					|| before.driftX() != after.driftX()
+					|| before.driftZ() != after.driftZ()
+					|| !before.state().equals(after.state())
+					|| !before.target().equals(after.target())
+					|| before.phase() != after.phase()
+					|| before.stateExpiryTick() != after.stateExpiryTick()
+					|| before.deathTick() != after.deathTick()
+					|| before.lastSeenTick() != after.lastSeenTick()) {
+				fieldsMatch = false;
+			}
+		}
+
+		check("every field survives exactly", fieldsMatch, "a field changed across the round trip");
+		System.out.println("        " + saving.size() + " zones -> " + blob.length()
+				+ " base64 chars (" + (blob.length() / Math.max(1, saving.size())) + " per zone)");
+
+		System.out.println("\n[27] unreadable saved data costs weather, never the world");
+		check("an empty string loads as empty",
+				ZonePersistence.fromBase64("", r).zones().isEmpty(), "not empty");
+		check("null loads as empty",
+				ZonePersistence.fromBase64(null, r).zones().isEmpty(), "not empty");
+		check("garbage loads as empty",
+				ZonePersistence.fromBase64("!!!not base64!!!", r).zones().isEmpty(), "not empty");
+
+		byte[] truncated = java.util.Arrays.copyOf(ZonePersistence.toBytes(saving.zones(), 9L), 40);
+		check("a truncated blob loads as empty",
+				ZonePersistence.fromBytes(truncated, r).zones().isEmpty(), "not empty");
+
+		byte[] wrongVersion = ZonePersistence.toBytes(saving.zones(), 9L);
+		wrongVersion[7] = (byte) (ZonePersistence.FORMAT_VERSION + 1);
+		check("a future format version is discarded, not guessed at",
+				ZonePersistence.fromBytes(wrongVersion, r).zones().isEmpty(), "not empty");
+
+		check("an empty zone list round-trips",
+				ZonePersistence.fromBase64(ZonePersistence.toBase64(List.of(), 7L), r).nextId() == 7L,
+				"lost the id counter");
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

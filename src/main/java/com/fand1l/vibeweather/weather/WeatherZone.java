@@ -78,6 +78,37 @@ public final class WeatherZone {
 	}
 
 	/**
+	 * Rebuilds a zone from persisted fields, including the ones the normal constructor derives.
+	 *
+	 * <p>A separate factory rather than setters: a zone loaded mid-transition has to come back with
+	 * its phase and target intact, and exposing those as setters would invite changing them on a
+	 * live zone, where only {@code tick} is allowed to.
+	 */
+	public static WeatherZone restore(
+			long id,
+			double centerX,
+			double centerZ,
+			double radius,
+			double blendBand,
+			double driftX,
+			double driftZ,
+			WeatherState current,
+			WeatherState target,
+			Phase phase,
+			long stateExpiryTick,
+			long deathTick,
+			long lastSeenTick,
+			WeatherRules rules
+	) {
+		WeatherZone zone = new WeatherZone(id, centerX, centerZ, radius, blendBand, driftX, driftZ,
+				current, stateExpiryTick, deathTick, rules);
+		zone.target = target.sanitize(rules);
+		zone.phase = phase;
+		zone.lastSeenTick = lastSeenTick;
+		return zone;
+	}
+
+	/**
 	 * Advances the zone by one tick.
 	 *
 	 * <p>Drift happens even when frozen: freezing stops weather from <em>changing</em>, not the wind

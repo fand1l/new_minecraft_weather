@@ -397,23 +397,34 @@ public static <T> RenderStateDataKey<T> create();
 **Фази для погоди серед них немає** — вона малюється окремим frame-graph-проходом у свій
 таргет. Тому M6 лишається міксином, як і планувалось.
 
-## Ще НЕ перевірено
+## Персистенція для мода: підтверджена конвенція
 
-Не використовувати, поки не підтверджено дампом:
+`SavedDataType` вимагає `DataFixTypes`, а той enum складається лише з ванільних значень.
+Розв'язок узято не з здогаду, а з бойового коду Fabric API
+(`fabric-data-attachment-api-v1`, `mixin/attachment/ServerLevelMixin.java`):
 
-Лишився **один** пункт:
+```java
+var type = new SavedDataType<>(
+        AttachmentSavedData.ID,                  // Identifier.fromNamespaceAndPath("fabric", "attachments")
+        () -> new AttachmentSavedData(level),
+        AttachmentSavedData.codec(level),
+        null // Object builder API 12.1.0 and later makes this a no-op
+);
+level.getDataStorage().computeIfAbsent(type);
+```
 
-- **`DataFixTypes` для власного `SavedDataType`.** Це enum суто ванільних значень
-  (`SAVED_DATA_RAIDS`, `SAVED_DATA_WEATHER`, …), а компонент у record обов'язковий.
-  Підставляти чуже значення не можна — на наші дані поїдуть ванільні датафіксери.
-  Чи приймає `SavedDataStorage` тут `null`, я **не перевіряв**: класу
-  `SavedDataStorage.java` у дампі немає (шукав під старим ім'ям `DimensionDataStorage`).
+Тобто:
 
-  Перевірити одним ґрепом:
-  ```bash
-  rg -n "dataFixType|DataFixTypes|SavedDataType" \
-     ~/.gradle/caches/fabric-loom --glob 'SavedDataStorage.java' | head -20
-  ```
+- `null` як `DataFixTypes` — **санкціонована** модова конвенція, Fabric API робить так у
+  продакшені;
+- працює це завдяки `fabric-object-builder-api-v1>=12.1.0`, який робить цей шлях no-op.
+  У нас `24.1.0` — із великим запасом;
+- `ServerLevel.getDataStorage().computeIfAbsent(type)` — персистенція **на вимір**, як і
+  потрібно;
+- власний namespace в `Identifier` проходить нормально.
 
-  Поки не перевірено — тримаю це значення єдиною константою в одному місці з поміткою,
-  щоб виправлення було в один рядок.
+---
+
+## Ще не перевірено
+
+**Порожньо.** Усе, що потрібно для моду, підтверджено першоджерелом.
