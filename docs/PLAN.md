@@ -176,7 +176,93 @@ private static final List<FogEnvironment> FOG_ENVIRONMENTS = Lists.newArrayList(
 `cir.getReturnValue()` і масштабує `environmentalStart/End` — п'ять рядків, і приватного
 списку ми не чіпаємо.
 
-### Чого ще бракує — раунд 3 (`dump-262-api-3.sh`), останній
+### Підтверджено раундом 3 — розвідку закрито
+
+**Локальність: два різні методи, обидва потрібні.**
+
+```java
+// Level.precipitationAt — сюди делегує isRainingAt, звідси вогонь/врожай/риболовля
+if (!isRaining())                                        return NONE;
+if (!canSeeSky(pos))                                     return NONE;
+if (getHeightmapPos(MOTION_BLOCKING, pos).getY() > pos.getY()) return NONE;
+return getBiome(pos).value().getPrecipitationAt(pos, getSeaLevel());
+
+// ClientLevel.getPrecipitationAt — ІНШІ умови: перевірки isRaining немає взагалі
+if (!chunkSource.hasChunk(...)) return NONE;
+return getBiome(pos).value().getPrecipitationAt(pos, getSeaLevel());
+```
+
+Клієнтський варіант не питає `isRaining()`, бо викликач (`extractRenderState`) уже
+відсікає за `intensity`. Тобто це справді два незалежні хуки, а не один.
+
+**Два обходи, яких я не очікував:**
+
+1. `ServerLevel.tickPrecipitation` питає **біом напряму**, а не `precipitationAt` —
+   тобто M2 його не накриває, і казан із снігом накопичувались би по всій карті, поки
+   `isRaining()` глобально true. Потрібен окремий гейт (M9).
+2. `getThunderLevel(a)` у ванілі — це `lerp(...) * getRainLevel(a)`. **Ваніль множить грозу
+   на дощ**, тобто суха гроза в ній неможлива в принципі. Наш M3 має повертати грозу
+   незалежно від опадів — інакше вимога «суха гроза дозволена й має траплятися» не працює.
+   Добре, що це спливло зараз, а не в грі.
+
+**Блискавки: власний драйвер не потрібен.** `ServerLevel.tickThunder(LevelChunk)`
+викликається по завантажених чанках і всередині гейтиться на `isRainingAt(pos)` — тобто
+через M2 **стає локальним автоматично**, і «лише в межах прогрузки» виконується без
+жодного коду з нашого боку. Плановий `LightningDriver.java` викреслено; лишається дрібний
+міксин на частоту (M10), щоб `WEAK` бив рідше за `NORMAL`. Ваніль там уже спавнить
+`EntityTypes.LIGHTNING_BOLT` з `snapTo(Vec3.atBottomCenterOf(pos))` і пасткою зі скелетним
+конем — усе це лишається недоторканим, як вимагає §6.
+
+**Рендер: `RenderStateDataKey` і `LevelRenderEvents` не потрібні.** M6 підміняє
+`WeatherEffectRenderer.render` **на місці**, всередині ванільного frame-graph-проходу
+`addWeatherPass`, де таргет уже прив'язаний. Вітер читаємо зі свого клієнтського стану,
+а не веземо в render-state. Підтверджено: `RenderPipelines.WEATHER_DEPTH_WRITE` /
+`WEATHER_NO_DEPTH_WRITE`, `OutputTarget.WEATHER_TARGET` →
+`levelRenderer.weatherTarget()`, `DefaultVertexFormat.PARTICLE`,
+`Options.weatherRadius()` → `OptionInstance<Integer>`.
+
+**Партикли — з першоджерела Fabric API** (дістав сам через `raw.githubusercontent.com`,
+`javap` для цього не знадобився):
+
+```java
+ParticleProviderRegistry.getInstance().register(ParticleType<T> type, PendingParticleProvider<T> ctor);
+interface PendingParticleProvider<T extends ParticleOptions> { ParticleProvider<T> create(FabricSpriteSet spriteSet); }
+interface FabricSpriteSet extends SpriteSet { TextureAtlas getAtlas(); List<TextureAtlasSprite> getSprites(); }
+FabricParticleTypes.simple() -> SimpleParticleType
+```
+
+**Смуги вітру — чесне обмеження.** `SingleQuadParticle` має **один** `quadSize`, тобто
+неоднорідно розтягнути квад у стрічку не можна. Витягнутість доведеться закласти в саму
+текстуру (тонка біла смуга з розмитими кінцями в межах квадратного спрайта), а орієнтацію
+за вітром дає поле `roll` — воно вже є і повертає квад навколо осі погляду. Виглядає як
+інверсійний слід; повноцінного «довгого шлейфа» без власного типу партикла не буде.
+Кажу це зараз, а не після того, як ти побачиш результат.
+
+### Що лишилось: рівно два імені
+
+`fabric-api source files extracted: 0` — sources-jar-ів Fabric API у кеші немає, а javap
+під Java 25 на машині не знайшовся. Але з Fabric це вже й не потрібно: усе потрібне я
+витягнув напряму з репозиторію. Відкритими лишились два **ванільні** імені:
+
+1. **Клас човна.** `AbstractBoat` у 26.2 немає. → **Обходжу без імені:** список типів
+   сутностей для вітру береться з конфігу як рядки реєстру
+   (`["minecraft:oak_boat", …]`) через `BuiltInRegistries.ENTITY_TYPE`. Так навіть краще —
+   модові човни додаються без правки коду.
+2. **Перевірка польоту на елітрах.** У `Entity.java` її немає, бо вона на `LivingEntity`.
+   Javadoc Fabric каже «elytra flight is also known as fall flying», що вказує на
+   `isFallFlying()`, але я це **не перевірив** і вгадувати не буду.
+
+Одна команда — і розвідка закінчена остаточно:
+
+```bash
+rg -n "FallFlying|Gliding|isGliding" ~/.gradle/caches/fabric-loom --glob 'LivingEntity.java' | head
+rg -ln "class .*Boat" ~/.gradle/caches/fabric-loom
+```
+
+(або те саме `grep -rn` по розпакованому sources-jar). Це не блокує серверну половину моду —
+її пишу вже зараз.
+
+### Довідка: що дістав раунд 3 (`dump-262-api-3.sh`)
 
 Секція `javap` у раунді 2 провалилась цілком: Fabric API 0.156.0 зібраний під Java 25
 (class file v69), а `javap` у `PATH` — зі старішого JDK і такі класи не читає. Помилку
@@ -243,7 +329,6 @@ new_minecraft_weather/
     │   │   │   ├── WeatherGridBuilder.java         # будує сітку семплів навколо гравця (світова ґратка)
     │   │   │   ├── WeatherSync.java                # повна сітка vs дельта; хто що вже має
     │   │   │   └── effects/
-    │   │   │       ├── LightningDriver.java        # спавн LightningBolt лише в прогружених чанках
     │   │   │       ├── PrecipitationEffects.java   # прискорений казан + накопичення шарів снігу
     │   │   │       └── WindPhysicsServer.java      # вітер на мобів і стріли (не на гравців)
     │   │   │
@@ -455,14 +540,17 @@ new_minecraft_weather/
 | **M6** | `WeatherEffectRenderer#render` | `@Inject HEAD cancellable` | Свій draw заради **нахилу опадів за вітром**: запис `ColumnInstance` поля нахилу не має, тож вершини треба будувати самим. Пайплайн, таргет, формат і текстури беремо ванільні — свого шейдера немає. |
 | **M7** | `FogRenderer#setupFog` | `@Inject RETURN` | Незалежна вісь туману. П'ять рядків: мутуємо `FogData` з `cir.getReturnValue()`. Приватний список `FOG_ENVIRONMENTS` не чіпаємо. |
 | **M8** | `WeatherCommand#register` | `@Inject HEAD cancellable` | Brigadier не має публічного API для видалення зареєстрованого вузла. Accessor на приватну мапу `children` у `CommandNode` гірший — лізе в чужу структуру. |
+| **M9** | `ServerLevel#tickPrecipitation(BlockPos)` | `@Inject HEAD cancellable` | **Обхід M2:** цей метод питає біом напряму, а не `precipitationAt`, тож без окремого гейта казан і сніг накопичувались би по всій карті, поки `isRaining()` глобально true. |
+| **M10** | `ServerLevel#tickThunder(LevelChunk)` | `@Inject HEAD cancellable` | Лише частота: `WEAK` має бити значно рідше за `NORMAL`. Локальність і обмеження прогрузкою ваніль забезпечує сама (гейт `isRainingAt` → наш M2), тому власного драйвера блискавок **немає**. |
 
-**Разом 8 міксинів замість 6** — але кожен дрібний, і сумарно коду **менше**, ніж у
-попередньому плані: замість власного циклу рендеру ми перевикористовуємо ванільний, а
-туман від опадів і затемнення неба взагалі не пишемо. Найбільший із восьми — M6, і той
-здебільшого копія ванільного `renderInstances` з доданим нахилом.
+**Разом 10 міксинів.** Більше, ніж хотілося, і я не буду вдавати, що це «мінімально» —
+але кожен від 3 до 15 рядків, і вони куплені за викреслені підсистеми: власний цикл
+рендеру опадів, власний `RenderPipeline` з шейдером, власний `LightningDriver`, власний
+розрахунок туману від дощу й затемнення неба. Альтернатива — не менше міксинів, а
+менше й **значно більших**, які дублюють ваніль замість того, щоб її використати.
 
-M4 і M6 можуть ще зникнути за результатами раунду 3 (якщо `ClientLevel.getPrecipitationAt`
-делегує в `Level.precipitationAt`, і якщо `LevelRenderEvents` дає фазу для малювання).
+Найбільший із десяти — M6 (копія ванільного `renderInstances` плюс нахил). Решта дев'ять
+сумарно — менш ніж сотня рядків.
 
 ### Де міксини свідомо НЕ потрібні
 
