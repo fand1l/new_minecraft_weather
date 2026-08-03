@@ -30,7 +30,20 @@ public record WeatherSample(WeatherState state, float coverage, float altitudeFa
 	public static final WeatherSample CLEAR = new WeatherSample(WeatherState.CLEAR, 0.0F, 1.0F);
 
 	/**
-	 * Decides whether a single precipitation column is drawn, dithering the zone edge.
+	 * Seed for the edge dither.
+	 *
+	 * <p>A constant, not the world seed. The pattern only has to be identical on client and server
+	 * and stable over time; the client has no reliable access to the world seed anyway, and a
+	 * mismatch there would put rain on different blocks than the ones the server considers wet.
+	 */
+	public static final long DITHER_SEED = 0x5669_6265_5765_6174L;
+
+	/**
+	 * Decides whether precipitation is present in a single block column, dithering the zone edge.
+	 *
+	 * <p>Used by both the renderer and the gameplay hooks, deliberately. Because the decision is a
+	 * function of position alone, a given block is consistently wet or consistently dry -- so the
+	 * block you can see rain falling on is the same block whose fire goes out.
 	 *
 	 * <p>The random source is a hash of the block column, not a per-frame RNG. That is the whole
 	 * point: the set of drawn columns must be fixed in world space, otherwise every column would
@@ -42,7 +55,7 @@ public record WeatherSample(WeatherState state, float coverage, float altitudeFa
 	 * pixel and reads as uniform translucency rather than as grain. For a distant wall of rain that
 	 * is arguably the better outcome, but there is no visible grain far away.
 	 */
-	public boolean shouldDrawColumn(long seed, int x, int z) {
+	public boolean precipitatesAt(long seed, int x, int z) {
 		float chance = coverage * altitudeFactor;
 
 		if (chance <= 0.0F) {

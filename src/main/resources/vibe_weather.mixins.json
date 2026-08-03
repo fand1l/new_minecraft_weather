@@ -1,0 +1,17 @@
+{
+	"required": true,
+	"package": "com.fand1l.vibeweather.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"LevelPrecipitationMixin",
+		"LevelRainLevelMixin",
+		"ServerLevelPrecipitationMixin",
+		"ServerLevelWeatherMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

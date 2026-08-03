@@ -238,7 +238,7 @@ public final class ModelHarness {
 		boolean stable = true;
 
 		for (int i = 0; i < 1000; i++) {
-			if (half.shouldDrawColumn(42L, i, -i) != half.shouldDrawColumn(42L, i, -i)) {
+			if (half.precipitatesAt(42L, i, -i) != half.precipitatesAt(42L, i, -i)) {
 				stable = false;
 			}
 		}
@@ -247,7 +247,7 @@ public final class ModelHarness {
 
 		for (int x = -100; x < 100; x++) {
 			for (int z = -100; z < 100; z++) {
-				if (half.shouldDrawColumn(42L, x, z)) {
+				if (half.precipitatesAt(42L, x, z)) {
 					drawn++;
 				}
 			}
@@ -259,8 +259,8 @@ public final class ModelHarness {
 
 		WeatherSample full = new WeatherSample(WeatherState.CLEAR, 1.0F, 1.0F);
 		WeatherSample none = new WeatherSample(WeatherState.CLEAR, 0.0F, 1.0F);
-		check("full coverage draws every column", full.shouldDrawColumn(42L, 3, 9), "missed a column");
-		check("zero coverage draws none", !none.shouldDrawColumn(42L, 3, 9), "drew a column");
+		check("full coverage draws every column", full.precipitatesAt(42L, 3, 9), "missed a column");
+		check("zero coverage draws none", !none.precipitatesAt(42L, 3, 9), "drew a column");
 
 		System.out.println("\n[10] server-side rain level is a maximum, not an average");
 		List<WeatherZone> mixed = new ArrayList<>();

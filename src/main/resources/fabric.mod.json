@@ -17,6 +17,9 @@
 			"com.fand1l.vibeweather.VibeWeather"
 		]
 	},
+	"mixins": [
+		"vibe_weather.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=0.19.3",
 		"minecraft": "~26.2",
