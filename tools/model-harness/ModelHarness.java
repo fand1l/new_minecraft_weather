@@ -741,6 +741,26 @@ public final class ModelHarness {
 		check("an empty change list produces no packets",
 				WeatherGridBuilder.batch(List.of(), 512).isEmpty(), "produced a packet");
 
+		System.out.println("\n[31] string hashing is stable and spreads");
+		long overworld = com.fand1l.vibeweather.util.Hashing.hashString("minecraft:overworld");
+		check("the same string always hashes the same",
+				overworld == com.fand1l.vibeweather.util.Hashing.hashString("minecraft:overworld"),
+				"unstable");
+		check("near-identical names do not collide",
+				com.fand1l.vibeweather.util.Hashing.hashString("minecraft:overworld")
+						!= com.fand1l.vibeweather.util.Hashing.hashString("minecraft:overworlc"),
+				"collision on a one-character difference");
+		check("an empty string is handled",
+				com.fand1l.vibeweather.util.Hashing.hashString("") != 0L, "hashed to zero");
+
+		// Seeds derived from two dimensions of one world must differ, or both would roll identical
+		// weather -- which is the whole reason the dimension is mixed in at all.
+		long worldSeed = 123456789L;
+		check("two dimensions of one world get different seeds",
+				(worldSeed ^ com.fand1l.vibeweather.util.Hashing.hashString("minecraft:overworld"))
+						!= (worldSeed ^ com.fand1l.vibeweather.util.Hashing.hashString("minecraft:the_nether")),
+				"same seed for two dimensions");
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");

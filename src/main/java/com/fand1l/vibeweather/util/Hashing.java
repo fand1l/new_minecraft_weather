@@ -50,4 +50,23 @@ public final class Hashing {
 	public static float toUnitFloat(long hash) {
 		return (hash >>> 40) * 0x1.0p-24F;
 	}
+
+	/**
+	 * A stable 64-bit hash of a string, for seeding from names such as a dimension key.
+	 *
+	 * <p>{@code String.hashCode} is specified by the language and so is stable, but it is only 32
+	 * bits and clusters badly on similar strings -- and {@code Object.hashCode} on the key itself
+	 * would be identity-based and change between runs, which is exactly the trap this avoids. FNV-1a
+	 * over the chars, finished through {@link #mix64}, is stable across JVMs and worlds.
+	 */
+	public static long hashString(String value) {
+		long hash = 0xCBF29CE484222325L;
+
+		for (int i = 0; i < value.length(); i++) {
+			hash ^= value.charAt(i);
+			hash *= 0x100000001B3L;
+		}
+
+		return mix64(hash);
+	}
 }

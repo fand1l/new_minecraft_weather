@@ -22,6 +22,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import com.fand1l.vibeweather.config.ConfigManager;
 import com.fand1l.vibeweather.net.VibeWeatherPayloads;
 import com.fand1l.vibeweather.server.ServerWeatherManager;
+import com.fand1l.vibeweather.util.Hashing;
 
 /**
  * Common entry point. Owns the config and the per-dimension weather managers.
@@ -91,7 +92,7 @@ public final class VibeWeather implements ModInitializer {
 			// ceiling, and a dimension other than the End -- so no dimension list of our own is
 			// needed, and modded dimensions are covered by the same rule.
 			if (!level.canHaveWeather()) {
-				LOGGER.info("Vibe Weather: skipping {}, it has no weather", level.dimension().location());
+				LOGGER.info("Vibe Weather: skipping {}, it has no weather", level.dimension());
 				continue;
 			}
 
@@ -114,7 +115,12 @@ public final class VibeWeather implements ModInitializer {
 	 * behaving oddly.
 	 */
 	private static RandomGenerator generatorFor(ServerLevel level) {
-		long seed = level.getSeed() ^ level.dimension().location().hashCode() * 0x9E3779B97F4A7C15L;
+		// The dimension key is hashed through its string form rather than through a method on
+		// ResourceKey. ResourceKey.location() does not exist in 26.2 -- it was presumably renamed
+		// alongside ResourceLocation becoming Identifier -- and its new name is not something this
+		// project has verified. Its own hashCode would be identity-based and differ between runs,
+		// which would defeat the point of seeding at all.
+		long seed = level.getSeed() ^ Hashing.hashString(level.dimension().toString());
 		return RandomGeneratorFactory.of("Xoshiro256PlusPlus").create(seed);
 	}
 
