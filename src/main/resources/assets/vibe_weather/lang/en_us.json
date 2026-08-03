@@ -1,0 +1,22 @@
+{
+	"commands.vibeweather.query.header": "Weather at %s, %s, %s",
+	"commands.vibeweather.query.clouds": "Cloud cover: %s (%s)",
+	"commands.vibeweather.query.precipitation": "Precipitation: %s (%s)",
+	"commands.vibeweather.query.thunder": "Thunder: %s (%s)",
+	"commands.vibeweather.query.wind": "Wind: %s at %s degrees (%s)",
+	"commands.vibeweather.query.fog": "Fog: %s (%s)",
+	"commands.vibeweather.query.coverage": "Zone coverage: %s",
+	"commands.vibeweather.query.altitude": "Altitude factor: %s",
+	"commands.vibeweather.query.zones": "Zones in this dimension: %s",
+	"commands.vibeweather.query.frozen": "Weather is frozen",
+	"commands.vibeweather.set.success": "Set weather within %s blocks",
+	"commands.vibeweather.freeze.on": "Weather changes frozen",
+	"commands.vibeweather.freeze.off": "Weather changes resumed",
+	"commands.vibeweather.reload.success": "Reloaded Vibe Weather config",
+	"commands.vibeweather.reload.failure": "Config rejected: %s",
+	"commands.vibeweather.no_weather": "This dimension has no weather",
+
+	"vibeweather.compat.sodium": "Vibe Weather: Sodium detected. Precipitation tilt and the custom weather draw are disabled; the weather model, sounds and wind physics still work.",
+
+	"options.vibeweather.weather_radius": "Weather Radius"
+}

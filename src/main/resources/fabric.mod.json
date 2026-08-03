@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "vibe_weather",
+	"version": "${version}",
+	"name": "Vibe Weather",
+	"description": "Replaces vanilla's clear/rain/thunder weather with independent local axes: cloud cover, precipitation, thunder, wind strength and direction, and fog. Weather is a set of moving zones, so you can fly sideways out of a storm or climb above it.",
+	"authors": [
+		"fand1l"
+	],
+	"contact": {
+		"sources": "https://github.com/fand1l/new_minecraft_weather"
+	},
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.fand1l.vibeweather.VibeWeather"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

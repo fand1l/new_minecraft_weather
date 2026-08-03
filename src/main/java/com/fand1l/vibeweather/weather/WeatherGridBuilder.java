@@ -107,6 +107,45 @@ public final class WeatherGridBuilder {
 		}
 	}
 
+	/**
+	 * Splits a set of changes into wire-sized batches.
+	 *
+	 * <p>A full grid is around 24 KB, which is uncomfortably close to packet size limits, and the
+	 * exact cap on the byte-array stream codec is not something this project has verified. Sending
+	 * several small packets sidesteps the question entirely and costs one payload type instead of
+	 * two: a full send is simply the first batch marked as a reset, followed by the rest.
+	 *
+	 * @param maxNodesPerBatch nodes per packet; each node costs ten bytes on the wire
+	 */
+	public static List<byte[]> batch(List<Change> changes, int maxNodesPerBatch) {
+		if (changes.isEmpty()) {
+			return List.of();
+		}
+
+		int perBatch = Math.max(1, maxNodesPerBatch);
+		List<byte[]> batches = new ArrayList<>((changes.size() + perBatch - 1) / perBatch);
+
+		for (int start = 0; start < changes.size(); start += perBatch) {
+			int end = Math.min(start + perBatch, changes.size());
+			batches.add(new Delta(null, changes.subList(start, end), false).changesToBytes());
+		}
+
+		return batches;
+	}
+
+	/** Every node of a grid as changes, for a full send. */
+	public static List<Change> allNodes(Grid grid) {
+		List<Change> changes = new ArrayList<>(grid.nodeCount());
+
+		for (int index = 0; index < grid.nodeCount(); index++) {
+			byte[] node = new byte[GridCodec.NODE_BYTES];
+			System.arraycopy(grid.data(), index * GridCodec.NODE_BYTES, node, 0, GridCodec.NODE_BYTES);
+			changes.add(new Change(index, node));
+		}
+
+		return changes;
+	}
+
 	/** Inverse of {@link Delta#changesToBytes()}. Rejects a malformed length rather than half-reading. */
 	public static List<Change> changesFromBytes(byte[] packed) {
 		int stride = Short.BYTES + GridCodec.NODE_BYTES;

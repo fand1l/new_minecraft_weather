@@ -1,0 +1,22 @@
+{
+	"commands.vibeweather.query.header": "Погода в точці %s, %s, %s",
+	"commands.vibeweather.query.clouds": "Хмарність: %s (%s)",
+	"commands.vibeweather.query.precipitation": "Опади: %s (%s)",
+	"commands.vibeweather.query.thunder": "Гроза: %s (%s)",
+	"commands.vibeweather.query.wind": "Вітер: %s, напрямок %s градусів (%s)",
+	"commands.vibeweather.query.fog": "Туман: %s (%s)",
+	"commands.vibeweather.query.coverage": "Покриття зоною: %s",
+	"commands.vibeweather.query.altitude": "Висотний множник: %s",
+	"commands.vibeweather.query.zones": "Зон у цьому вимірі: %s",
+	"commands.vibeweather.query.frozen": "Погоду заморожено",
+	"commands.vibeweather.set.success": "Погоду встановлено в радіусі %s блоків",
+	"commands.vibeweather.freeze.on": "Зміни погоди заморожено",
+	"commands.vibeweather.freeze.off": "Зміни погоди відновлено",
+	"commands.vibeweather.reload.success": "Конфіг Vibe Weather перезавантажено",
+	"commands.vibeweather.reload.failure": "Конфіг відхилено: %s",
+	"commands.vibeweather.no_weather": "У цьому вимірі погоди немає",
+
+	"vibeweather.compat.sodium": "Vibe Weather: виявлено Sodium. Нахил опадів і власний рендер погоди вимкнено; модель погоди, звуки й фізика вітру працюють.",
+
+	"options.vibeweather.weather_radius": "Радіус погоди"
+}

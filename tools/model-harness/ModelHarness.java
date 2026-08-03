@@ -703,6 +703,44 @@ public final class ModelHarness {
 				params0.altitudeFactor(64) == 1.0F && params0.altitudeFactor(400) == 0.0F,
 				params0.altitudeFactor(64) + " / " + params0.altitudeFactor(400));
 
+		System.out.println("\n[30] a full grid splits into wire-sized batches");
+		List<WeatherGridBuilder.Change> allNodes = WeatherGridBuilder.allNodes(atOrigin);
+		check("a full send covers every node", allNodes.size() == atOrigin.nodeCount(),
+				allNodes.size() + " of " + atOrigin.nodeCount());
+
+		List<byte[]> batches = WeatherGridBuilder.batch(allNodes, 512);
+		int batchedNodes = 0;
+		int largestBatch = 0;
+
+		for (byte[] batch : batches) {
+			batchedNodes += WeatherGridBuilder.changesFromBytes(batch).size();
+			largestBatch = Math.max(largestBatch, batch.length);
+		}
+
+		check("batching loses no nodes", batchedNodes == allNodes.size(),
+				batchedNodes + " of " + allNodes.size());
+		check("no packet approaches the size a full grid would be", largestBatch < 8192,
+				largestBatch + " bytes");
+		System.out.println("        " + atOrigin.nodeCount() + " nodes -> " + batches.size()
+				+ " packets, largest " + largestBatch + " bytes (a single full send would be "
+				+ atOrigin.data().length + ")");
+
+		// Rebuilding from the batches must give the server's grid back, which is what a joining
+		// client does: an empty grid, then every batch applied in turn.
+		WeatherGridBuilder.Grid assembled = new WeatherGridBuilder.Grid(atOrigin.originNodeX(),
+				atOrigin.originNodeZ(), atOrigin.halfExtent(), atOrigin.step(),
+				new byte[atOrigin.data().length]);
+
+		for (byte[] batch : batches) {
+			assembled = WeatherGridBuilder.apply(assembled, new WeatherGridBuilder.Delta(
+					assembled, WeatherGridBuilder.changesFromBytes(batch), false));
+		}
+
+		check("applying every batch reproduces the grid",
+				java.util.Arrays.equals(assembled.data(), atOrigin.data()), "mismatch after reassembly");
+		check("an empty change list produces no packets",
+				WeatherGridBuilder.batch(List.of(), 512).isEmpty(), "produced a packet");
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");
