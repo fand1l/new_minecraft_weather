@@ -20,6 +20,7 @@
 | Фабрики | `Identifier.fromNamespaceAndPath(ns, path)`, `Identifier.withDefaultNamespace(path)` |
 | Рівень компіляції міксинів | `JAVA_25`, `overwrites.requireAnnotations: true` |
 | Ґеймрул погодного циклу | `GameRules.ADVANCE_WEATHER` (перейменований з `doWeatherCycle`) |
+| Пакет ґеймрулів | `net.minecraft.world.level.gamerules` (**не** `net.minecraft.world.level`) |
 
 ---
 
@@ -430,11 +431,41 @@ level.getDataStorage().computeIfAbsent(type);
 
 ---
 
+## Ґеймрули — 26.2 винесла їх в окремий пакет
+
+Джерело: FabricMC/fabric гілка `26.2` (`gradle.properties`: `minecraft_version=26.2`,
+`version=0.156.0`), модуль `fabric-game-rule-api-v1` — тобто код, який компілюється саме проти
+нашої версії, і теж на офіційних мапінгах Mojang.
+
+```java
+// Пакет — з fabric-game-rule-api-v1.classtweaker (там повні шляхи класів):
+//     accessible class net/minecraft/world/level/gamerules/GameRules$VisitorCaller
+import net.minecraft.world.level.gamerules.GameRule;          // сам тип правила, generic: GameRule<T>
+import net.minecraft.world.level.gamerules.GameRuleCategory;
+import net.minecraft.world.level.gamerules.GameRules;         // тримач констант
+
+// Форма доступу — з GameRuleChangeCallbackGameTest.java, дослівно:
+GameRules gameRules = serverLevel.getGameRules();             // ServerLevel#getGameRules() -> GameRules
+boolean fireDamage = gameRules.get(GameRules.FIRE_DAMAGE);    // get(GameRule<T>) -> T
+gameRules.set(GameRules.FIRE_DAMAGE, fireDamage, server);     // set(GameRule<T>, T, MinecraftServer)
+```
+
+Стиль імен констант: `GameRules.FIRE_DAMAGE` — без старого префікса `RULE_`. Але
+`doWeatherCycle` → `ADVANCE_WEATHER` показує, що частину правил ще й **перейменували**, а не
+просто перевели в SCREAMING_SNAKE. Тож саму назву конкретної константи вгадати не можна.
+
+Бонусом підтверджено з тих самих файлів: `net.minecraft.server.commands.GameRuleCommand`,
+`net.minecraft.server.jsonrpc.methods.GameRulesService`, `MinecraftServer#onGameRuleChanged(GameRule, Object)`.
+
+---
+
 ## Спростовано компілятором
 
 | Що я написав | Результат | Обхід |
 |---|---|---|
 | `ResourceKey.location()` | **не існує** у 26.2 — `cannot find symbol` на `ResourceKey<Level>`. Ім'я, найімовірніше, змінилось разом із `ResourceLocation` → `Identifier`, але нове я не перевіряв | Метод не потрібен: у лог пишемо сам `level.dimension()`, для сіда беремо `Hashing.hashString(level.dimension().toString())` |
+| `net.minecraft.world.level.GameRules` | **не той пакет** — `cannot find symbol: class GameRules`. Клас нікуди не дівся, переїхав у `net.minecraft.world.level.gamerules` | Виправлено за секцією вище |
+| `net.minecraft.world.entity.animal.horse` | **пакета не існує** — `package ... does not exist`. Куди переїхав `SkeletonHorse`, я не перевіряв | Блок пастки-коня прибрано з M10 до перевірки, з поміткою на місці |
 
 Урок: чотири раунди дампів підтвердили те, що я **шукав**, але `ResourceKey` серед цілей не
 було — у дампах він трапляється лише як аргумент, ніколи з викликом методу. Відсутність у
@@ -444,5 +475,22 @@ level.getDataStorage().computeIfAbsent(type);
 
 ## Ще не перевірено
 
-Нічого з того, що мод використовує. Але список цілей дампів був **моїм** — якщо знадобиться
-клас, якого я не питав, він так само може виявитись перейменованим.
+Список цілей дампів був **моїм** — якщо знадобиться клас, якого я не питав, він так само може
+виявитись перейменованим. Зараз відкриті пункти, і всі троє в одному місці (M10):
+
+| Що | Навіщо | Чим закрити |
+|---|---|---|
+| Тіло `ServerLevel#tickThunder(LevelChunk)` | M10 замінює цей метод. Я відтворював його з пам'яті про старіші версії — саме звідси обидві помилкові здогадки | `./tools/show-source.sh ServerLevel tickThunder` |
+| Константа ґеймрула спавну мобів | ванільна пастка-кінь під нею; `SPAWN_MOBS` була **здогадкою**, не фактом | `./tools/show-source.sh -g GameRules SPAWN` |
+| Клас скелетного коня: пакет, `setTrap`, `setAge` | відтворити пастку дослівно | `./tools/find-class.sh SkeletonHorse` |
+
+---
+
+## Інструменти
+
+| Скрипт | Питання, на яке відповідає |
+|---|---|
+| `tools/find-class.sh Foo` | у якому пакеті лежить клас |
+| `tools/show-source.sh Foo bar` | що насправді написано в методі/класі |
+| `tools/dump-262-*.sh` | пакетні дампи цілих зрізів API (раунди 1–4) |
+| `tools/run-model-harness.sh` | 134 перевірки чистої моделі без гри |
