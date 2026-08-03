@@ -33,6 +33,15 @@ public final class WeatherHooks {
 
 		/** Weather at a world position, from the received grid. */
 		WeatherSample sampleAt(double x, double y, double z);
+
+		/**
+		 * Whether precipitation reaches one block column, including the dithered zone edge.
+		 *
+		 * <p>Separate from {@link #sampleAt} because this is the question vanilla's renderer asks for
+		 * every column in the weather radius, every frame. Answering it by building a sample would
+		 * allocate tens of thousands of objects a frame, which the brief rules out.
+		 */
+		boolean precipitates(int x, int y, int z);
 	}
 
 	private static ClientSource clientSource;
@@ -153,14 +162,12 @@ public final class WeatherHooks {
 	 * and applies only the zone.
 	 */
 	public static Biome.Precipitation clientPrecipitationAt(Level level, BlockPos pos) {
-		WeatherSample sample = sampleAt(level, pos.getX(), pos.getY(), pos.getZ());
-
-		if (sample == null) {
+		if (!level.canHaveWeather() || clientSource == null || !clientSource.ready()) {
 			return null;
 		}
 
-		if (sample.effectivePrecip() <= 0.0F
-				|| !sample.precipitatesAt(WeatherSample.DITHER_SEED, pos.getX(), pos.getZ())) {
+		// The allocation-free path: this runs per column, per frame, across the whole weather radius.
+		if (!clientSource.precipitates(pos.getX(), pos.getY(), pos.getZ())) {
 			return Biome.Precipitation.NONE;
 		}
 

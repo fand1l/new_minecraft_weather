@@ -12,6 +12,7 @@ import com.fand1l.vibeweather.api.WeatherState;
 import com.fand1l.vibeweather.util.MathUtil;
 import com.fand1l.vibeweather.weather.FogRules;
 import com.fand1l.vibeweather.weather.GridCodec;
+import com.fand1l.vibeweather.weather.GridInterpolator;
 import com.fand1l.vibeweather.weather.WeatherGridBuilder;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
@@ -794,6 +795,60 @@ public final class ModelHarness {
 		// a player might be standing in.
 		check("the cap leaves simulated zones alone", capManager.zones().contains(capNatural),
 				"a natural zone was evicted by the override cap");
+
+		System.out.println("\n[33] the client grid interpolates between nodes, not in steps");
+
+		// A 3x3 lattice with a 16-block step: node (0,0) is dry with the wind at 350 degrees, node
+		// (1,0) is in full rain with the wind at 10. Both extremes sit next to each other on purpose.
+		WeatherGridBuilder.Grid lattice = WeatherGridBuilder.empty(0, 0, 1, 16.0);
+		GridCodec.pack(new WeatherSample(new WeatherState(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 350.0F), 0.0F, 1.0F),
+				lattice.data(), lattice.indexOf(0, 0) * GridCodec.NODE_BYTES);
+		GridCodec.pack(new WeatherSample(new WeatherState(1.0F, 1.0F, 0.0F, 0.0F, 0.5F, 10.0F), 1.0F, 1.0F),
+				lattice.data(), lattice.indexOf(1, 0) * GridCodec.NODE_BYTES);
+
+		float atNode = GridInterpolator.unitAt(lattice, 16.0, 0.0, GridCodec.FIELD_PRECIP);
+		float halfway = GridInterpolator.unitAt(lattice, 8.0, 0.0, GridCodec.FIELD_PRECIP);
+		float offGrid = GridInterpolator.unitAt(lattice, -400.0, 0.0, GridCodec.FIELD_PRECIP);
+
+		check("a reading on a node returns that node's value", Math.abs(atNode - 1.0F) <= GridCodec.unitError(),
+				"got " + atNode);
+		check("a reading between nodes is interpolated, not snapped",
+				Math.abs(halfway - 0.5F) <= GridCodec.unitError() + 1e-4F, "got " + halfway);
+		check("off the grid reads as clear rather than clamping to the edge", offGrid == 0.0F,
+				"got " + offGrid);
+
+		// The wind is the axis where a naive average is visibly wrong: 350 and 10 average to 180,
+		// which would point the rain the opposite way half a chunk from the boundary.
+		float midAngle = GridInterpolator.angleAt(lattice, 8.0, 0.0);
+		check("a bearing interpolates the short way around",
+				Math.abs(MathUtil.angleDelta(midAngle, 0.0F)) < 1.0F, "got " + midAngle + " degrees");
+
+		WeatherSample interpolated = GridInterpolator.sample(lattice, 8.0, 0.0, 1.0F, r);
+		check("the full sample agrees with the scalar reader",
+				Math.abs(interpolated.state().precip() - halfway) <= 1e-4F,
+				interpolated.state().precip() + " vs " + halfway);
+		check("the interpolated sample is sanitized",
+				interpolated.state().precip() <= 0.0F || interpolated.state().clouds() >= r.overcastFloor(),
+				"wet without overcast: " + interpolated.state());
+
+		WeatherSample dryEnd = GridInterpolator.sample(lattice, 0.0, 0.0, 1.0F, r);
+		WeatherSample wetEnd = GridInterpolator.sample(lattice, 16.0, 0.0, 1.0F, r);
+		check("a time blend returns its endpoints exactly",
+				GridInterpolator.blend(dryEnd, wetEnd, 0.0F, r) == dryEnd
+						&& GridInterpolator.blend(dryEnd, wetEnd, 1.0F, r) == wetEnd,
+				"endpoints were rebuilt instead of returned");
+		check("a time blend at the midpoint lands between them",
+				GridInterpolator.blend(dryEnd, wetEnd, 0.5F, r).coverage() > dryEnd.coverage()
+						&& GridInterpolator.blend(dryEnd, wetEnd, 0.5F, r).coverage() < wetEnd.coverage(),
+				"midpoint outside the endpoints");
+
+		// A reset packet arrives with no previous grid, and its changes still have to land.
+		WeatherGridBuilder.Grid shell = WeatherGridBuilder.empty(0, 0, 1, 16.0);
+		WeatherGridBuilder.Grid rebuiltFromReset = WeatherGridBuilder.apply(null,
+				new WeatherGridBuilder.Delta(shell, WeatherGridBuilder.allNodes(lattice), false));
+		check("a reset with no previous grid keeps its changes",
+				GridInterpolator.unitAt(rebuiltFromReset, 16.0, 0.0, GridCodec.FIELD_PRECIP) == atNode,
+				"the first packet after a reset was dropped");
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

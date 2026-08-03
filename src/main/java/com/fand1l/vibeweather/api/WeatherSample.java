@@ -56,6 +56,17 @@ public record WeatherSample(WeatherState state, float coverage, float altitudeFa
 	 * is arguably the better outcome, but there is no visible grain far away.
 	 */
 	public boolean precipitatesAt(long seed, int x, int z) {
+		return precipitatesAt(seed, x, z, coverage, altitudeFactor);
+	}
+
+	/**
+	 * The same decision from loose floats.
+	 *
+	 * <p>The renderer sweeps tens of thousands of columns a frame and may not allocate, so it reads
+	 * coverage straight out of the grid rather than building a sample per column. Both callers land
+	 * here so the drawn columns and the wet columns cannot diverge.
+	 */
+	public static boolean precipitatesAt(long seed, int x, int z, float coverage, float altitudeFactor) {
 		float chance = coverage * altitudeFactor;
 
 		if (chance <= 0.0F) {

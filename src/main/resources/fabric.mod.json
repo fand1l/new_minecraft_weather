@@ -15,10 +15,17 @@
 	"entrypoints": {
 		"main": [
 			"com.fand1l.vibeweather.VibeWeather"
+		],
+		"client": [
+			"com.fand1l.vibeweather.client.VibeWeatherClient"
 		]
 	},
 	"mixins": [
-		"vibe_weather.mixins.json"
+		"vibe_weather.mixins.json",
+		{
+			"config": "vibe_weather.client.mixins.json",
+			"environment": "client"
+		}
 	],
 	"depends": {
 		"fabricloader": ">=0.19.3",

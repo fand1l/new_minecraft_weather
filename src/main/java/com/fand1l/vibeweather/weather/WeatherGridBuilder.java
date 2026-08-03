@@ -263,14 +263,45 @@ public final class WeatherGridBuilder {
 		return new Delta(current, changes, false);
 	}
 
-	/** Applies a delta to a client-side copy, producing the grid the server built. */
+	/**
+	 * An all-zero grid of a given shape.
+	 *
+	 * <p>The starting point for a client rebuild: the client is told the shape in the packet header
+	 * and fills it from the changes that follow. Zero unpacks to clear weather, so a node the server
+	 * never mentions reads as nothing happening rather than as garbage.
+	 */
+	public static Grid empty(int originNodeX, int originNodeZ, int halfExtent, double step) {
+		int side = 2 * halfExtent + 1;
+		return new Grid(originNodeX, originNodeZ, halfExtent, step,
+				new byte[side * side * GridCodec.NODE_BYTES]);
+	}
+
+	/**
+	 * Applies a delta to a client-side copy, producing the grid the server built.
+	 *
+	 * <p>A null previous grid is not the same as a full delta: on a reset the client starts from an
+	 * empty grid of the right shape and still has to write the changes into it. Returning the shell
+	 * untouched there would silently drop the entire first packet.
+	 */
 	public static Grid apply(Grid previous, Delta delta) {
-		if (delta.full() || previous == null) {
+		if (delta.full()) {
 			return delta.grid();
 		}
 
 		Grid target = delta.grid();
 		byte[] data = new byte[target.data().length];
+
+		if (previous == null) {
+			System.arraycopy(target.data(), 0, data, 0, data.length);
+
+			for (Change change : delta.changes()) {
+				System.arraycopy(change.node(), 0, data, change.index() * GridCodec.NODE_BYTES,
+						GridCodec.NODE_BYTES);
+			}
+
+			return new Grid(target.originNodeX(), target.originNodeZ(), target.halfExtent(),
+					target.step(), data);
+		}
 
 		// Start from whatever the previous grid already knows about each node, then overwrite the
 		// nodes the delta carries. Nodes with no previous value and no change cannot occur: the

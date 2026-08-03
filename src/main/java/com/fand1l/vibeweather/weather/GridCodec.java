@@ -35,7 +35,32 @@ public final class GridCodec {
 	/** Bytes per grid node. */
 	public static final int NODE_BYTES = 8;
 
+	/** Byte offsets of the 0..1 axes inside a node, for reading one field without unpacking all of them. */
+	public static final int FIELD_CLOUDS = 0;
+	public static final int FIELD_PRECIP = 1;
+	public static final int FIELD_THUNDER = 2;
+	public static final int FIELD_FOG = 3;
+	public static final int FIELD_WIND = 4;
+	public static final int FIELD_COVERAGE = 5;
+
 	private GridCodec() {
+	}
+
+	/**
+	 * One 0..1 axis of one node.
+	 *
+	 * <p>Exists so the render path can ask "how hard is it raining here" per column without building
+	 * a sample object for each one. The brief forbids allocating in the render loop, and a column
+	 * sweep at the configured radius is tens of thousands of calls a frame.
+	 */
+	public static float unit(byte[] source, int nodeOffset, int field) {
+		return dequantiseUnit(source[nodeOffset + field]);
+	}
+
+	/** The wind bearing of one node, in degrees. */
+	public static float angle(byte[] source, int nodeOffset) {
+		int raw = (source[nodeOffset + 6] & 0xFF) | ((source[nodeOffset + 7] & 0xFF) << 8);
+		return dequantiseAngle(raw);
 	}
 
 	public static int byteLength(int nodeCount) {
