@@ -244,6 +244,18 @@ public final class WeatherZone {
 		lastSeenTick = tick;
 	}
 
+	/**
+	 * Whether this zone came from a command rather than from the simulation.
+	 *
+	 * <p>Recognised by a state expiry that never arrives: a natural zone rolls a new target when its
+	 * expiry comes up, while an override is meant to hold exactly what was asked for until it dies.
+	 * Reusing that field rather than adding a flag keeps the persisted layout unchanged, so overrides
+	 * survive a restart for free.
+	 */
+	public boolean isCommandOverride() {
+		return stateExpiryTick == Long.MAX_VALUE;
+	}
+
 	/** Extends the zone's life, used when a command override should outlive its natural span. */
 	public void extendLife(long newDeathTick) {
 		deathTick = Math.max(deathTick, newDeathTick);

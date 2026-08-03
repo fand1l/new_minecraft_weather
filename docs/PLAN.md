@@ -19,24 +19,29 @@
 
 ---
 
-## Наступний крок — єдиний
+## Наступний крок
 
-Написано й перевірено (95 перевірок, `./tools/run-model-harness.sh`): модель погоди,
-симуляція та життєвий цикл зон, конфіг, пакування сітки й дельти. Усе це навмисно **без
-типів Minecraft**, тому й покривається харнесом без гри.
+Написано й перевірено (100 перевірок, `./tools/run-model-harness.sh` + 39 конфігурних):
+модель погоди, симуляція та життєвий цикл зон, конфіг, пакування сітки й дельти. Усе це
+навмисно **без типів Minecraft**, тому й покривається харнесом без гри.
 
-Лишився шар, що торкається Minecraft напряму: персистенція в `SavedData`, реєстри,
-мережеві payload-и, команди, аксесори сутностей і клієнтські хуки. Плюс три ванільні
-імені, відкриті з часів рев'ю.
+Написано й компілюється проти 26.2: персистенція в `SavedData`, мережеві payload-и,
+серверний менеджер, п'ять серверних міксинів, обидва дерева команд.
 
-**Один прогін закриває все:**
+Лишилось: клієнтський пакет (сітка, інтерполяція, рендер із нахилом, туман, звук, фізика
+вітру), чотири клієнтські міксини, `SodiumCompat`, прискорення казана й снігу.
+
+**Відкрите питання — одне, і воно все в M10.** Три імені, яких я не читав у джерелах 26.2.
+Один прогін закриває всі:
 
 ```bash
-./tools/dump-262-server-api.sh     # згенерує dump-262-server-api.txt
+./tools/show-source.sh ServerLevel tickThunder     # реальне тіло методу
+./tools/show-source.sh -g GameRules SPAWN          # як зветься ґеймрул спавну мобів
+./tools/find-class.sh SkeletonHorse                # у якому пакеті скелетний кінь
 ```
 
-`genSources` повторювати не треба. Після цього Крок 2 дописується без жодного вигаданого
-імені: серверний менеджер, мережа, команди, 10 міксинів і клієнт.
+Доки їх немає, M10 б'є блискавкою, але не спавнить пастку зі скелетним конем — це
+позначено на місці в коді, а не забуто.
 
 ---
 
@@ -82,7 +87,7 @@
 | Стан рендеру погоди | `net.minecraft.client.renderer.state.level.WeatherRenderState` | 🆕 погода теж переїхала на extract/submit-архітектуру |
 | Туман | `net.minecraft.client.renderer.fog.FogRenderer`, `.fog.FogData`, `.fog.environment.FogEnvironment` + `AtmosphericFogEnvironment`, `WaterFogEnvironment`, `LavaFogEnvironment`, `PowderedSnowFogEnvironment`, `BlindnessFogEnvironment`, `DarknessFogEnvironment`, `MobEffectFogEnvironment` | 🆕 туман тепер стратегія `FogEnvironment`. Надія зареєструвати свою **не справдилась** — список приватний; див. розділ нижче. |
 | Тип туману | `net.minecraft.world.level.material.FogType` | — |
-| Ванільна `/weather` | `net.minecraft.server.commands.WeatherCommand` | ✅ ціль M8 підтверджена |
+| Ванільна `/weather` | `net.minecraft.server.commands.WeatherCommand` | ✅ клас підтверджено, але міксин виявився непотрібним — див. M8 |
 | Blaze3D-пайплайн | `com.mojang.blaze3d.pipeline.RenderPipeline` з **публічним `Builder`**: `withVertexShader/withFragmentShader(Identifier)`, `withVertexBinding`, `withBindGroupLayout`, `withColorTargetState`, `withDepthStencilState`, `withPolygonMode`, `withCull`, `withPrimitiveTopology`, `withShaderDefine`, `buildSnippet()` | ✅ **головний ризик знято**: власний пайплайн офіційно підтримується через Blaze3D, сирий GL не потрібен |
 | Fabric-розширення пайплайна | `RenderPipeline implements FabricRenderPipeline`; є `FabricRenderPipeline.Builder` | Fabric офіційно інжектить інтерфейс у ванільний білдер |
 | GPU-ресурси | `blaze3d.buffers.{GpuBuffer, GpuBufferSlice, GpuFence, Std140Builder, Std140SizeCalculator}`, `blaze3d.framegraph.{FrameGraphBuilder, FramePass}`, `GpuFormat`, `IndexType` | Уніформи через std140 bind groups (Vulkan-стиль) |
@@ -566,17 +571,17 @@ new_minecraft_weather/
 | **M5** | `WeatherEffectRenderer#extractRenderState` | `@Redirect` на виклик `options.weatherRadius().get()` | Підмінити радіус рендеру погоди на наш конфігурований. Три рядки — решту (перебір колонок, сніг/дощ, освітлення) робить ваніль. |
 | **M6** | `WeatherEffectRenderer#render` | `@Inject HEAD cancellable` | Свій draw заради **нахилу опадів за вітром**: запис `ColumnInstance` поля нахилу не має, тож вершини треба будувати самим. Пайплайн, таргет, формат і текстури беремо ванільні — свого шейдера немає. |
 | **M7** | `FogRenderer#setupFog` | `@Inject RETURN` | Незалежна вісь туману. П'ять рядків: мутуємо `FogData` з `cir.getReturnValue()`. Приватний список `FOG_ENVIRONMENTS` не чіпаємо. |
-| **M8** | `WeatherCommand#register` | `@Inject HEAD cancellable` | Brigadier не має публічного API для видалення зареєстрованого вузла. Accessor на приватну мапу `children` у `CommandNode` гірший — лізе в чужу структуру. |
+| ~~**M8**~~ | ~~`WeatherCommand#register`~~ | — | **Викреслено при реалізації.** Виявилось, що видаляти вузол і не треба: `CommandNode#addChild` зливає однойменні вузли й **перезаписує виконавця**, тож достатньо зареєструвати `weather` ще раз після ванілі. Ванільна перевірка прав і ванільний парсер `duration` лишаються її власними. Деталі — `command/VanillaWeatherBridge`. |
 | **M9** | `ServerLevel#tickPrecipitation(BlockPos)` | `@Inject HEAD cancellable` | **Обхід M2:** цей метод питає біом напряму, а не `precipitationAt`, тож без окремого гейта казан і сніг накопичувались би по всій карті, поки `isRaining()` глобально true. |
-| **M10** | `ServerLevel#tickThunder(LevelChunk)` | `@Inject HEAD cancellable`, повна заміна тіла (~25 рядків) | **Обхід дощових гейтів заради сухої грози.** Ванільний `isRainingAt(pos)` після M2 дає `false` без опадів, тому суха гроза не била б узагалі. Відтворюємо ванільну послідовність один в один (пастка зі скелетним конем, `LightningBolt`, `snapTo`), міняючи лише гейт на нашу вісь грози та частоту під `WEAK`/`NORMAL`. Прогрузка чанків лишається ванільною задарма. |
+| **M10** | `ServerLevel#tickThunder(LevelChunk)` | `@Inject HEAD cancellable`, повна заміна тіла (~25 рядків) | **Обхід дощових гейтів заради сухої грози.** Ванільний `isRainingAt(pos)` після M2 дає `false` без опадів, тому суха гроза не била б узагалі. Гейт міняємо на нашу вісь грози, частоту — під `WEAK`/`NORMAL`. Прогрузка чанків лишається ванільною задарма. **Наразі відтворено лише сам `LightningBolt`**: пастка зі скелетним конем чекає на реальне тіло ванільного методу (`tools/show-source.sh ServerLevel tickThunder`), бо відтворювати її з пам'яті — це вже двічі коштувало раунду збірки. |
 
-**Разом 10 міксинів.** Більше, ніж хотілося, і я не буду вдавати, що це «мінімально» —
+**Разом 9 міксинів.** Більше, ніж хотілося, і я не буду вдавати, що це «мінімально» —
 але кожен від 3 до 15 рядків, і вони куплені за викреслені підсистеми: власний цикл
 рендеру опадів, власний `RenderPipeline` з шейдером, власний `LightningDriver`, власний
 розрахунок туману від дощу й затемнення неба. Альтернатива — не менше міксинів, а
 менше й **значно більших**, які дублюють ваніль замість того, щоб її використати.
 
-Найбільший із десяти — M6 (копія ванільного `renderInstances` плюс нахил). Решта дев'ять
+Найбільший із дев'яти — M6 (копія ванільного `renderInstances` плюс нахил). Решта вісім
 сумарно — менш ніж сотня рядків.
 
 ### Де міксини свідомо НЕ потрібні
@@ -589,6 +594,11 @@ new_minecraft_weather/
   прискорюємо — рівно як просить ТЗ.
 - **Партикли листя.** Зносимо ванільні партикли, змінюючи їхню швидкість у клієнтському тіку;
   нових не спавнимо.
+- **Перехоплення ванільної `/weather`.** Реєструємо `weather` вдруге — Brigadier зливає
+  однойменні вузли й перезаписує виконавця. Підкоманди беремо **з живого дерева**, а не
+  зі списку в голові: якщо Mojang щось перейменує, буде рядок у лозі з реальною назвою, а
+  не мовчазна `/weather rain`, яка нічого не робить. Одразу після реєстрації перевіряємо,
+  що виконавці справді наші — це єдина відмова в усьому шарі команд, яка була б невидимою.
 - **Команди, мережа, конфіг, тік, вхід гравця** — усе через Fabric API.
 
 ---

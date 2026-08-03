@@ -14,11 +14,14 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
+import com.fand1l.vibeweather.command.VanillaWeatherBridge;
+import com.fand1l.vibeweather.command.VibeWeatherCommand;
 import com.fand1l.vibeweather.config.ConfigManager;
 import com.fand1l.vibeweather.net.VibeWeatherPayloads;
 import com.fand1l.vibeweather.server.ServerWeatherManager;
@@ -68,6 +71,12 @@ public final class VibeWeather implements ModInitializer {
 		}
 
 		VibeWeatherPayloads.register();
+
+		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> {
+			VibeWeatherCommand.register(dispatcher);
+			// After ours, so a warning about /weather is the last word on the subject in the log.
+			VanillaWeatherBridge.register(dispatcher);
+		});
 
 		ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
 		ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);

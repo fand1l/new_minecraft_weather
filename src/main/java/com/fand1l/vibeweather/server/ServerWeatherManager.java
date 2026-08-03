@@ -268,6 +268,21 @@ public final class ServerWeatherManager {
 		}
 	}
 
+	/**
+	 * Makes every player's next tick carry a grid update.
+	 *
+	 * <p>Used after a command changes the weather. Waiting out the normal update interval would put a
+	 * two-second gap between the command and the sky reacting, which reads as the command not having
+	 * worked. Cheaper than {@link #resendEverything}, which also resends parameters.
+	 */
+	public void refreshGrids() {
+		VibeWeatherConfig config = currentConfig();
+
+		for (Tracked state : tracked.values()) {
+			state.ticksSinceUpdate = config.grid.updateIntervalTicks;
+		}
+	}
+
 	public void forgetPlayer(UUID id) {
 		tracked.remove(id);
 	}

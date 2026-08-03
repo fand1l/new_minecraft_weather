@@ -20,7 +20,7 @@ import com.fand1l.vibeweather.util.MathUtil;
  * <p>The split exists because 26.2 gives precipitation no per-column intensity: the renderer asks
  * for a precipitation enum per column and applies a single intensity scalar to the whole frame. A
  * soft edge therefore cannot be drawn with transparency. It is drawn with column <em>density</em>
- * instead -- see {@link #shouldDrawColumn}.
+ * instead -- see {@link #precipitatesAt}.
  *
  * @param state          the blended, sanitized tuple
  * @param coverage       spatial blend weight in 0..1

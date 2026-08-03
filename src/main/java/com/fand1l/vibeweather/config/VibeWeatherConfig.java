@@ -241,6 +241,14 @@ public final class VibeWeatherConfig {
 		/** Radius the intercepted vanilla /weather applies to, in blocks. */
 		public double vanillaWeatherRadius = 512.0;
 		public double defaultSetRadius = 256.0;
+		/**
+		 * How long a command-set patch of weather holds, in ticks, when no duration is given.
+		 *
+		 * <p>A flat number rather than vanilla's randomised default: vanilla's exact range is not
+		 * something this project has read out of 26.2 source, and an operator setting weather by hand
+		 * wants a duration they can predict anyway.
+		 */
+		public int defaultSetDurationTicks = 12000;
 		public int maxOverrides = 64;
 		/** Whether /vibeweather query needs the permission level. It is read-only information. */
 		public boolean queryNeedsPermission = false;

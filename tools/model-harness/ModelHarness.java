@@ -761,6 +761,40 @@ public final class ModelHarness {
 						!= (worldSeed ^ com.fand1l.vibeweather.util.Hashing.hashString("minecraft:the_nether")),
 				"same seed for two dimensions");
 
+		System.out.println("\n[32] command overrides are capped, and the cap evicts the oldest");
+		ZoneManager capManager = new ZoneManager();
+		WeatherZone capNatural = capManager.spawnNear(anchors.get(0), 0L, r, live, params, spawnRng);
+		capManager.add(capNatural);
+		WeatherState capState = new WeatherState(1.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+
+		check("a naturally spawned zone is not mistaken for an override",
+				!capNatural.isCommandOverride(), "a simulated zone reported itself as a command zone");
+
+		for (int i = 0; i < 5; i++) {
+			capManager.addOverride(i * 10.0, 0.0, 128.0, 32.0, capState, 0L, 1000L, 2, r);
+		}
+
+		check("the override cap holds", capManager.overrideCount() == 2,
+				capManager.overrideCount() + " overrides survived a cap of 2");
+		check("the newest override is the one kept",
+				capManager.zones().get(0).centerX() == 40.0,
+				"front zone is at " + capManager.zones().get(0).centerX());
+
+		boolean oldestGone = true;
+
+		for (WeatherZone capZone : capManager.zones()) {
+			if (capZone.isCommandOverride() && capZone.centerX() == 0.0) {
+				oldestGone = false;
+			}
+		}
+
+		check("the oldest override is the one dropped", oldestGone, "the first override outlived the cap");
+
+		// The cap is for command zones. Evicting simulated weather to make room would delete a storm
+		// a player might be standing in.
+		check("the cap leaves simulated zones alone", capManager.zones().contains(capNatural),
+				"a natural zone was evicted by the override cap");
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");

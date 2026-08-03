@@ -231,9 +231,27 @@ public final class ZoneManager {
 		return zone;
 	}
 
+	/** Zones created by commands rather than by the simulation. */
+	public int overrideCount() {
+		int count = 0;
+
+		for (WeatherZone zone : zones) {
+			if (zone.isCommandOverride()) {
+				count++;
+			}
+		}
+
+		return count;
+	}
+
 	/**
 	 * Inserts a command-driven zone at the front, where the blender's maximum-weight rule lets it
 	 * dominate whatever natural weather it overlaps.
+	 *
+	 * <p>Overrides are capped, and the cap evicts rather than refuses. An operator setting weather
+	 * repeatedly is the normal case, and each call leaves a zone behind that outlives its command;
+	 * refusing the newest would make the command silently stop working, while dropping the oldest
+	 * does what the operator meant.
 	 */
 	public WeatherZone addOverride(
 			double x,
@@ -243,8 +261,19 @@ public final class ZoneManager {
 			WeatherState state,
 			long gameTick,
 			long durationTicks,
+			int maxOverrides,
 			WeatherRules rules
 	) {
+		// New overrides go in at the front, so the oldest is the last one in the list.
+		while (maxOverrides > 0 && overrideCount() >= maxOverrides) {
+			for (int i = zones.size() - 1; i >= 0; i--) {
+				if (zones.get(i).isCommandOverride()) {
+					zones.remove(i);
+					break;
+				}
+			}
+		}
+
 		WeatherZone zone = new WeatherZone(
 				nextId++, x, z, radius, band, 0.0, 0.0, state, Long.MAX_VALUE, gameTick + durationTicks, rules);
 		zone.forceState(state, rules);
