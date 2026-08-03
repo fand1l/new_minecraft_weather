@@ -58,9 +58,18 @@ public final class ThunderDriver {
 		return random.nextInt(interval) == 0;
 	}
 
-	/** Whether a strike here should also spawn a trap, matching vanilla's rule. */
+	/**
+	 * Whether a strike here should also spawn a skeleton trap, matching vanilla's rule.
+	 *
+	 * <p>The roll comes before the lightning rod check, in that order, because that is the order
+	 * vanilla writes it in and {@code &&} short-circuits: a strike on a rod still consumes a number
+	 * from the generator. Swapping the two would change every subsequent roll in the stream.
+	 *
+	 * <p>Vanilla's mob-spawning game rule is checked by the caller, ahead of this, for the same
+	 * reason -- with the rule off, no number is drawn at all.
+	 */
 	public static boolean isTrapStrike(double effectiveDifficulty, boolean overRod, RandomGenerator random) {
-		return !overRod && random.nextDouble() < effectiveDifficulty * 0.01;
+		return random.nextDouble() < effectiveDifficulty * 0.01 && !overRod;
 	}
 
 	/** Thunder band at a sample, for the query command and logging. */

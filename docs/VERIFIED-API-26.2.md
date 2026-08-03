@@ -465,7 +465,11 @@ gameRules.set(GameRules.FIRE_DAMAGE, fireDamage, server);     // set(GameRule<T>
 |---|---|---|
 | `ResourceKey.location()` | **не існує** у 26.2 — `cannot find symbol` на `ResourceKey<Level>`. Ім'я, найімовірніше, змінилось разом із `ResourceLocation` → `Identifier`, але нове я не перевіряв | Метод не потрібен: у лог пишемо сам `level.dimension()`, для сіда беремо `Hashing.hashString(level.dimension().toString())` |
 | `net.minecraft.world.level.GameRules` | **не той пакет** — `cannot find symbol: class GameRules`. Клас нікуди не дівся, переїхав у `net.minecraft.world.level.gamerules` | Виправлено за секцією вище |
-| `net.minecraft.world.entity.animal.horse` | **пакета не існує** — `package ... does not exist`. Куди переїхав `SkeletonHorse`, я не перевіряв | Блок пастки-коня прибрано з M10 до перевірки, з поміткою на місці |
+| `net.minecraft.world.entity.animal.horse` | **пакета не існує** — `package ... does not exist`. Кінські класи переїхали | `net.minecraft.world.entity.animal.equine.SkeletonHorse` (`./tools/find-class.sh`) |
+
+Спільне в усіх трьох: **клас або метод нікуди не дівся, змінилось лише його місце**. Тому
+`find-class.sh` і `show-source.sh` закривають цей клас помилок повністю, а пам'ять про
+старіші версії — ні.
 
 Урок: чотири раунди дампів підтвердили те, що я **шукав**, але `ResourceKey` серед цілей не
 було — у дампах він трапляється лише як аргумент, ніколи з викликом методу. Відсутність у
@@ -473,16 +477,50 @@ gameRules.set(GameRules.FIRE_DAMAGE, fireDamage, server);     // set(GameRule<T>
 
 ---
 
-## Ще не перевірено
+## `ServerLevel#tickThunder` — реальне тіло 26.2
 
-Список цілей дампів був **моїм** — якщо знадобиться клас, якого я не питав, він так само може
-виявитись перейменованим. Зараз відкриті пункти, і всі троє в одному місці (M10):
+Ціль M10, прочитана дослівно (`./tools/show-source.sh ServerLevel tickThunder`, рядки 541–575).
+Записано повністю, бо міксин замінює цей метод, і будь-яка розбіжність — це тиха зміна
+ванільної механіки:
 
-| Що | Навіщо | Чим закрити |
-|---|---|---|
-| Тіло `ServerLevel#tickThunder(LevelChunk)` | M10 замінює цей метод. Я відтворював його з пам'яті про старіші версії — саме звідси обидві помилкові здогадки | `./tools/show-source.sh ServerLevel tickThunder` |
-| Константа ґеймрула спавну мобів | ванільна пастка-кінь під нею; `SPAWN_MOBS` була **здогадкою**, не фактом | `./tools/show-source.sh -g GameRules SPAWN` |
-| Клас скелетного коня: пакет, `setTrap`, `setAge` | відтворити пастку дослівно | `./tools/find-class.sh SkeletonHorse` |
+```java
+public void tickThunder(final LevelChunk chunk) {
+    ChunkPos chunkPos = chunk.getPos();
+    boolean raining = this.isRaining();
+    int minX = chunkPos.getMinBlockX();
+    int minZ = chunkPos.getMinBlockZ();
+    Profiler.get().push("thunder");
+    if (raining && this.isThundering() && this.random.nextInt(100000) == 0) {
+        BlockPos pos = this.findLightningTargetAround(this.getBlockRandomPos(minX, 0, minZ, 15));
+        if (this.isRainingAt(pos)) {
+            DifficultyInstance difficulty = this.getCurrentDifficultyAt(pos);
+            boolean isTrap = this.getGameRules().get(GameRules.SPAWN_MOBS)
+                    && this.random.nextDouble() < difficulty.getEffectiveDifficulty() * 0.01
+                    && !this.getBlockState(pos.below()).is(BlockTags.LIGHTNING_RODS);
+            if (isTrap) {
+                SkeletonHorse horse = EntityTypes.SKELETON_HORSE.create(this, EntitySpawnReason.EVENT);
+                if (horse != null) { horse.setTrap(true); horse.setAge(0);
+                                     horse.setPos(pos.getX(), pos.getY(), pos.getZ());
+                                     this.addFreshEntity(horse); }
+            }
+            LightningBolt bolt = EntityTypes.LIGHTNING_BOLT.create(this, EntitySpawnReason.EVENT);
+            if (bolt != null) { bolt.snapTo(Vec3.atBottomCenterOf(pos));
+                                bolt.setVisualOnly(isTrap); this.addFreshEntity(bolt); }
+        }
+    }
+    Profiler.get().pop();
+}
+```
+
+Звідси підтверджено: `GameRules.SPAWN_MOBS` (`GameRule<Boolean>`, зареєстрований як
+`spawn_mobs` у категорії `SPAWNING`), `net.minecraft.world.entity.animal.equine.SkeletonHorse`
+з `setTrap`/`setAge`/`setPos`, `Level#getBlockRandomPos(int,int,int,int)`, частота **1/100000
+на чанк за тік**, множник складності **0.01**, і те, що `&&` тут короткозамикає в порядку
+ґеймрул → кидок → громовідвід.
+
+Що M10 свідомо робить інакше й чому: гейт на вісь грози замість трьох дощових; частота під
+`WEAK`/`NORMAL`; власний сід-генератор замість `this.random`; секцію профайлера пропущено
+(`Profiler` — ще один непрочитаний пакет, а поведінки вона не змінює).
 
 ---
 

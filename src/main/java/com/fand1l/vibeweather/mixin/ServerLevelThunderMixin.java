@@ -10,11 +10,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.entity.animal.equine.SkeletonHorse;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.phys.Vec3;
 
 import com.fand1l.vibeweather.VibeWeather;
@@ -31,10 +35,12 @@ import com.fand1l.vibeweather.server.effects.ThunderDriver;
  * false wherever nothing is falling, so a dry thunderstorm would produce dark clouds, rumble, and
  * not one bolt. Invariant 2 says dry storms are legal and should happen, so the body is replaced.
  *
- * <p>The intent is to reproduce the rest exactly -- the bolt, and the skeleton trap horse with its
- * difficulty roll and lightning rod exemption -- because a second, divergent lightning path would
- * drift from vanilla over time and the brief requires vanilla mechanics to stay as they are. Right
- * now only the bolt is here; see the note at the trap site for why, and what closes it.
+ * <p>Everything downstream of those gates is reproduced from the real 26.2 body -- the skeleton trap
+ * horse, its game rule, its difficulty roll, the lightning rod exemption, and the bolt -- because a
+ * second, divergent lightning path would drift from vanilla over time, and the brief requires
+ * vanilla mechanics to stay as they are. Two things are deliberately not copied: the profiler
+ * section, which would name a package this project has not read for no behavioural gain, and the
+ * random source, which is the mod's seeded generator so that a world replays the same way.
  *
  * <p>What stays vanilla for free is the restriction to loaded chunks: this method is called from
  * chunk ticking, so replacing its body changes nothing about where lightning can occur.
@@ -75,6 +81,10 @@ public abstract class ServerLevelThunderMixin {
 			return;
 		}
 
+		// Vanilla seeds this with getBlockRandomPos(minX, 0, minZ, 15), which draws a uniform point in
+		// the chunk from the level's own LCG. This draws the same uniform point from the mod's seeded
+		// generator instead, keeping every roll in this method on one stream. The y is discarded
+		// either way -- findLightningTargetAround walks the heightmap from there.
 		BlockPos target = findLightningTargetAround(
 				new BlockPos(minX + random.nextInt(16), 0, minZ + random.nextInt(16)));
 
@@ -84,16 +94,33 @@ public abstract class ServerLevelThunderMixin {
 			return;
 		}
 
-		// MISSING ON PURPOSE, NOT FORGOTTEN: vanilla also rolls here for a skeleton trap horse --
-		// difficulty-scaled, skipped over a lightning rod, and gated on the mob-spawning game rule.
-		// Reproducing it means writing three names I have not read in 26.2 source (the horse class,
-		// its trap setters, and the rule constant), and two guesses at this spot have already cost a
-		// build round. It goes back in verbatim once ./tools/show-source.sh has printed the real
-		// tickThunder body; ThunderDriver.isTrapStrike already holds the roll, unchanged.
+		// From here down this is vanilla's tail, line for line, read out of 26.2 rather than recalled:
+		// the game rule first, then the difficulty roll, then the rod check, then the horse and the
+		// bolt. The order matters beyond taste -- && short-circuits, so moving the rod check ahead of
+		// the roll would consume a different number of values from the generator.
+		DifficultyInstance difficulty = level.getCurrentDifficultyAt(target);
+		boolean trap = level.getGameRules().get(GameRules.SPAWN_MOBS)
+				&& ThunderDriver.isTrapStrike(
+						difficulty.getEffectiveDifficulty(),
+						level.getBlockState(target.below()).is(BlockTags.LIGHTNING_RODS),
+						random);
+
+		if (trap) {
+			SkeletonHorse horse = EntityTypes.SKELETON_HORSE.create(level, EntitySpawnReason.EVENT);
+
+			if (horse != null) {
+				horse.setTrap(true);
+				horse.setAge(0);
+				horse.setPos(target.getX(), target.getY(), target.getZ());
+				level.addFreshEntity(horse);
+			}
+		}
+
 		LightningBolt bolt = EntityTypes.LIGHTNING_BOLT.create(level, EntitySpawnReason.EVENT);
 
 		if (bolt != null) {
 			bolt.snapTo(Vec3.atBottomCenterOf(target));
+			bolt.setVisualOnly(trap);
 			level.addFreshEntity(bolt);
 		}
 	}
