@@ -2,6 +2,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import com.fand1l.vibeweather.api.ClientWeatherParams;
 import com.fand1l.vibeweather.api.CloudCover;
 import com.fand1l.vibeweather.api.Precipitation;
 import com.fand1l.vibeweather.api.ThunderLevel;
@@ -626,6 +627,81 @@ public final class ModelHarness {
 		check("an empty zone list round-trips",
 				ZonePersistence.fromBase64(ZonePersistence.toBase64(List.of(), 7L), r).nextId() == 7L,
 				"lost the id counter");
+
+		System.out.println("\n[28] a delta survives being flattened for the wire");
+		byte[] packedChanges = rowDelta.changesToBytes();
+		List<WeatherGridBuilder.Change> unpacked = WeatherGridBuilder.changesFromBytes(packedChanges);
+
+		check("the change count survives", unpacked.size() == rowDelta.changes().size(),
+				rowDelta.changes().size() + " -> " + unpacked.size());
+
+		boolean changesMatch = unpacked.size() == rowDelta.changes().size();
+
+		for (int i = 0; changesMatch && i < unpacked.size(); i++) {
+			if (unpacked.get(i).index() != rowDelta.changes().get(i).index()
+					|| !java.util.Arrays.equals(unpacked.get(i).node(), rowDelta.changes().get(i).node())) {
+				changesMatch = false;
+			}
+		}
+
+		check("every index and node survives", changesMatch, "a change differed after unpacking");
+		check("the packed length matches the advertised cost",
+				packedChanges.length == rowDelta.byteLength(),
+				packedChanges.length + " vs " + rowDelta.byteLength());
+		check("a malformed length yields nothing rather than half a patch",
+				WeatherGridBuilder.changesFromBytes(new byte[7]).isEmpty(), "half-read a bad array");
+		check("null yields nothing",
+				WeatherGridBuilder.changesFromBytes(null).isEmpty(), "did not reject null");
+
+		// Applying the unpacked changes must reproduce the same grid as applying the original ones,
+		// which is what the client actually does with what arrives over the wire.
+		WeatherGridBuilder.Grid fromWire = WeatherGridBuilder.apply(atOrigin,
+				new WeatherGridBuilder.Delta(moved, unpacked, false));
+		check("the client rebuilds the server grid from the wire form",
+				java.util.Arrays.equals(fromWire.data(), moved.data()), "mismatch after the wire round trip");
+
+		check("the default extent fits the two-byte node index",
+				27 <= WeatherGridBuilder.maxHalfExtent(),
+				"27 exceeds " + WeatherGridBuilder.maxHalfExtent());
+		System.out.println("        largest half extent a u16 index allows: "
+				+ WeatherGridBuilder.maxHalfExtent() + " nodes");
+
+		System.out.println("\n[29] client params survive the wire and degrade rather than break");
+		ClientWeatherParams params0 = ClientWeatherParams.defaults();
+		ClientWeatherParams back = ClientWeatherParams.fromBytes(params0.toBytes());
+
+		check("thresholds survive exactly", back.rules().equals(params0.rules()), "rules differed");
+		check("the cloud band survives",
+				back.cloudBottom() == params0.cloudBottom() && back.cloudTop() == params0.cloudTop(),
+				back.cloudBottom() + ".." + back.cloudTop());
+		check("render limits survive",
+				back.weatherRadius() == params0.weatherRadius() && back.maxColumns() == params0.maxColumns()
+						&& back.maxTiltTan() == params0.maxTiltTan(),
+				"a render limit differed");
+		check("flags survive",
+				back.tiltEnabled() == params0.tiltEnabled() && back.windStreaks() == params0.windStreaks()
+						&& back.frozen() == params0.frozen(),
+				"a flag differed");
+		System.out.println("        " + params0.toBytes().length + " bytes, sent once per join");
+
+		check("empty params fall back to defaults",
+				ClientWeatherParams.fromBytes(new byte[0]).rules().equals(WeatherRules.defaults()),
+				"not defaults");
+		check("null params fall back to defaults",
+				ClientWeatherParams.fromBytes(null).rules().equals(WeatherRules.defaults()), "not defaults");
+
+		byte[] futureVersion = params0.toBytes();
+		futureVersion[3] = (byte) (ClientWeatherParams.FORMAT_VERSION + 1);
+		check("a version mismatch renders with defaults rather than disconnecting",
+				ClientWeatherParams.fromBytes(futureVersion).rules().equals(WeatherRules.defaults()),
+				"did not fall back");
+		check("a truncated packet falls back too",
+				ClientWeatherParams.fromBytes(java.util.Arrays.copyOf(params0.toBytes(), 20))
+						.rules().equals(WeatherRules.defaults()), "did not fall back");
+
+		check("the altitude cutoff comes from the params' own cloud band",
+				params0.altitudeFactor(64) == 1.0F && params0.altitudeFactor(400) == 0.0F,
+				params0.altitudeFactor(64) + " / " + params0.altitudeFactor(400));
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

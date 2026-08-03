@@ -84,6 +84,55 @@ public final class WeatherGridBuilder {
 					? grid.data().length
 					: changes.size() * (Short.BYTES + GridCodec.NODE_BYTES);
 		}
+
+		/**
+		 * Packs the changes into one array: a repeated {@code [u16 index][8 node bytes]}.
+		 *
+		 * <p>Flattening here rather than in the payload keeps the network layer carrying nothing but
+		 * a byte array and a few integers, so its stream codec is built entirely from
+		 * {@code ByteBufCodecs} primitives instead of hand-written encode and decode lambdas.
+		 */
+		public byte[] changesToBytes() {
+			byte[] out = new byte[changes.size() * (Short.BYTES + GridCodec.NODE_BYTES)];
+			int offset = 0;
+
+			for (Change change : changes) {
+				out[offset] = (byte) (change.index() & 0xFF);
+				out[offset + 1] = (byte) ((change.index() >>> 8) & 0xFF);
+				System.arraycopy(change.node(), 0, out, offset + 2, GridCodec.NODE_BYTES);
+				offset += Short.BYTES + GridCodec.NODE_BYTES;
+			}
+
+			return out;
+		}
+	}
+
+	/** Inverse of {@link Delta#changesToBytes()}. Rejects a malformed length rather than half-reading. */
+	public static List<Change> changesFromBytes(byte[] packed) {
+		int stride = Short.BYTES + GridCodec.NODE_BYTES;
+
+		if (packed == null || packed.length % stride != 0) {
+			return List.of();
+		}
+
+		List<Change> changes = new ArrayList<>(packed.length / stride);
+
+		for (int offset = 0; offset < packed.length; offset += stride) {
+			int index = (packed[offset] & 0xFF) | ((packed[offset + 1] & 0xFF) << 8);
+			byte[] node = new byte[GridCodec.NODE_BYTES];
+			System.arraycopy(packed, offset + 2, node, 0, GridCodec.NODE_BYTES);
+			changes.add(new Change(index, node));
+		}
+
+		return changes;
+	}
+
+	/**
+	 * A grid index does not fit a {@code u16} beyond this side length, which is what caps the
+	 * configurable extent.
+	 */
+	public static int maxHalfExtent() {
+		return (int) ((Math.sqrt(65536.0) - 1.0) / 2.0);
 	}
 
 	private WeatherGridBuilder() {

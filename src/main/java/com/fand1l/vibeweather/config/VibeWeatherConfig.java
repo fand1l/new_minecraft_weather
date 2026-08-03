@@ -330,6 +330,14 @@ public final class VibeWeatherConfig {
 			throw new IllegalArgumentException("grid.half_extent must be >= 1, got " + grid.halfExtent);
 		}
 
+		// Grid deltas address a node by a two-byte index, so a larger grid could not be patched.
+		int maxExtent = com.fand1l.vibeweather.weather.WeatherGridBuilder.maxHalfExtent();
+
+		if (grid.halfExtent > maxExtent) {
+			throw new IllegalArgumentException("grid.half_extent must be <= " + maxExtent
+					+ " so a node index fits the delta format, got " + grid.halfExtent);
+		}
+
 		if (grid.updateIntervalTicks < 1) {
 			throw new IllegalArgumentException(
 					"grid.update_interval_ticks must be >= 1, got " + grid.updateIntervalTicks);

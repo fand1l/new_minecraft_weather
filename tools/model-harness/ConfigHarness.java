@@ -100,6 +100,12 @@ public final class ConfigHarness {
 		ConfigManager badClouds = withFile("{ \"render\": { \"cloud_bottom\": 300.0, \"cloud_top\": 200.0 } }");
 		check("an inverted cloud band is rejected", !badClouds.reload().applied(), "accepted");
 
+		ConfigManager hugeGrid = withFile("{ \"grid\": { \"half_extent\": 400 } }");
+		ConfigManager.Result extentResult = hugeGrid.reload();
+		check("a grid too large for the delta index is rejected", !extentResult.applied(), "accepted");
+		check("the message says the limit", extentResult.message().contains("delta format"),
+				extentResult.message());
+
 		ConfigManager badJson = withFile("{ \"zones\": { oops }");
 		ConfigManager.Result jsonResult = badJson.reload();
 		check("malformed JSON is rejected", !jsonResult.applied(), "accepted");
