@@ -55,6 +55,15 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
+	// Without this, Gradle compiles using whatever JVM it happens to be running on. On a system
+	// where the default java-25 package is the JRE, that JVM has no compiler and compileJava fails
+	// with "does not provide the required capabilities: [JAVA_COMPILER]" even though a perfectly
+	// good JDK 25 is installed elsewhere -- Gradle's own provisioned toolchain, for instance.
+	// Naming the toolchain makes Gradle go and find (or download) a JDK instead.
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+
 	withSourcesJar()
 
 	sourceCompatibility = JavaVersion.VERSION_25
