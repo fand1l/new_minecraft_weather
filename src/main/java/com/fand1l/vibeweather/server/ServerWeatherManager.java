@@ -60,6 +60,17 @@ public final class ServerWeatherManager {
 		return level;
 	}
 
+	/**
+	 * The dimension's generator.
+	 *
+	 * <p>Shared with the thunder hook so strike rolls come from the same seeded stream as the zone
+	 * simulation, rather than from the level's own random -- which would need shadowing a vanilla
+	 * field for no benefit.
+	 */
+	public RandomGenerator random() {
+		return random;
+	}
+
 	public List<WeatherZone> zones() {
 		return zones.zones();
 	}

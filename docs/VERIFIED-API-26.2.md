@@ -55,7 +55,12 @@ public  void resetWeatherCycle();
 public  void tickThunder(LevelChunk chunk);        // ціль M10
 public  void tickPrecipitation(BlockPos pos);      // ціль M9; @VisibleForTesting, але public
 public  WeatherData getWeatherData();              // делегує в server.getWeatherData()
+protected BlockPos findLightningTargetAround(BlockPos pos);   // рядок 622 — потрібен @Shadow для M10
 ```
+
+`getBlockRandomPos(...)` у `ServerLevel.java` лише викликається, оголошення немає — воно
+десь у надкласі. Обходимо: випадкову точку в чанку рахуємо самі з
+`chunkPos.getMinBlockX()/getMinBlockZ()` плюс `random.nextInt(16)`.
 
 ```java
 // net.minecraft.server.MinecraftServer
