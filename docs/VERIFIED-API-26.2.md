@@ -540,6 +540,18 @@ float halfSizeX = this.columnSizeX[index] / 2.0F;
 Тобто наш конфіг із `weather_radius = 96` не «розширив би» дощ, а поклав би рендер-тред
 з `ArrayIndexOutOfBoundsException`. **M5 викреслено**, поле з конфігу прибрано.
 
+**1b. `columnSizeX`/`columnSizeZ` — це не розміри, а орієнтація.** Ім'я вводить в оману:
+
+```java
+private final float[] columnSizeX = new float[1024];   // final -> @Shadow @Final у M6 коректний
+this.columnSizeX[z * 32 + x] = -deltaZ / distance;     // одиничний вектор, перпендикулярний
+this.columnSizeZ[z * 32 + x] =  deltaX / distance;     // до напрямку на камеру
+```
+
+Тобто це білбордна орієнтація квада: половина цього вектора вліво й вправо від центра колонки
+дає полотнище шириною в блок, розвернуте до глядача. Ми читаємо ту саму таблицю тим самим
+індексом, тож геометрія лишається ванільною.
+
 **2. Нахил не потребує жодного власного draw.** Уся GPU-частина (`RenderPipelines`,
 `OutputTarget.WEATHER_TARGET`, `ByteBufferBuilder`, `MeshData`, `RenderPass`, юніформи) живе
 в `render`, а геометрію пише приватний `renderInstances`. Досить замінити другий — і весь
@@ -616,9 +628,13 @@ public void playLocalSound(Entity, SoundEvent, SoundSource, float, float);
 
 | # | Що | Де використано | Ціна помилки | Команда |
 |---|---|---|---|---|
-| 1 | чи `columnSizeX`/`columnSizeZ` справді `final` | `@Shadow @Final` у M6 | mixin-помилка при старті | `./tools/show-source.sh -g WeatherEffectRenderer columnSize` |
-| 2 | пакет `Projectile` | вітер на стріли | компіляція | `./tools/find-class.sh Projectile AbstractArrow` |
-| 3 | межі опції `Options.weatherRadius()` | підтвердити стелю 15 | нічого — просто цікаво | `./tools/show-source.sh Options weatherRadius` |
+Порожньо. Усе, що зараз є в коді, прочитане з джерел 26.2.
+
+Останній раунд закрив: `columnSizeX`/`columnSizeZ` справді `final` (і не розміри — див. вище),
+`net.minecraft.world.entity.projectile.Projectile`, а також
+`net.minecraft.world.entity.projectile.arrow.AbstractArrow` — стріли теж переїхали в підпакет,
+як і човни з кіньми. `Options.weatherRadius()` міряється в блоках
+(`Component.translatable("options.blocks", value)`).
 
 ---
 

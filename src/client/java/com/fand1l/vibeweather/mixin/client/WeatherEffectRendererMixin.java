@@ -40,10 +40,14 @@ import com.fand1l.vibeweather.util.MathUtil;
 @Mixin(WeatherEffectRenderer.class)
 public abstract class WeatherEffectRendererMixin {
 	/**
-	 * Per-column width jitter, filled once in the constructor.
+	 * Billboard orientation per column offset, not a size, despite the name.
 	 *
-	 * <p>Shadowed rather than recomputed because it is what stops the curtain looking like a grid,
-	 * and its values have to match the ones vanilla generated for this renderer instance.
+	 * <p>Vanilla fills a 32 by 32 table once with {@code (-dz/d, dx/d)} -- the unit vector
+	 * perpendicular to the line from the camera to that offset. Halved and added to either side of
+	 * the column centre, it turns each column into a one-block-wide quad facing the viewer.
+	 *
+	 * <p>Shadowed rather than recomputed so the quads stay exactly the ones vanilla would have built;
+	 * recomputing would be duplicating a lookup table to get the same numbers.
 	 */
 	@Shadow
 	@Final
@@ -140,13 +144,13 @@ public abstract class WeatherEffectRendererMixin {
 	}
 
 	/**
-	 * Column half-width, or a plain default when the index falls outside the table.
+	 * Half the billboard vector for a column, or a fixed diagonal when the index is off the table.
 	 *
-	 * <p>Vanilla indexes a 32 by 32 table with the column's offset from the camera, which only holds
-	 * for offsets within fifteen blocks. Nothing in this method clamps it. Rather than depend on the
-	 * weather radius option never exceeding that, this returns a sane size instead of throwing --
-	 * a mod that crashes the render thread over a slider is worse than one that draws a uniform
-	 * curtain at the edge.
+	 * <p>The table only covers offsets within fifteen blocks of the camera and vanilla clamps
+	 * nothing, so a weather radius above that would index out of bounds. Rather than depend on the
+	 * option never allowing it, an out-of-range column gets a fixed orientation: a quad that does not
+	 * turn to face the viewer is worse-looking than one that does, and better than a crashed render
+	 * thread.
 	 */
 	private static float halfSize(float[] sizes, int index) {
 		return index < 0 || index >= sizes.length ? 0.5F : sizes[index] / 2.0F;
