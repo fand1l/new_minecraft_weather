@@ -933,6 +933,69 @@ public final class ModelHarness {
 		System.out.println("        drizzle fired " + drizzleHits + " times in 100000 ticks, downpour "
 				+ downpourHits);
 
+		System.out.println("\n[36] a command override wins outright instead of being averaged away");
+
+		// The bug this exists for, reproduced: in game there were fifteen zones around the player, so
+		// "set thunder normal" arrived as 0.33 and "set wind gale" as 0.09 -- under the gale
+		// threshold, which is why neither the tilt nor the wind physics ever ran.
+		List<WeatherZone> crowd = new ArrayList<>();
+
+		for (int i = 0; i < 14; i++) {
+			crowd.add(new WeatherZone(100 + i, 0, 0, 400, 100, 0, 0,
+					new WeatherState(0.2F, 0.0F, 0.0F, 0.0F, 0.05F, 0.0F),
+					// A finite expiry is what makes a zone natural rather than command-made.
+					50_000L, 100_000L, r));
+		}
+
+		WeatherSample beforeOverride = ZoneBlender.sample(crowd, 0, 64, 0, 192.0F, 224.0F, r);
+		check("a crowd of calm zones reads as calm", beforeOverride.state().windStrength() < 0.1F,
+				String.valueOf(beforeOverride.state().windStrength()));
+
+		ZoneManager commanded = new ZoneManager();
+
+		for (WeatherZone natural : crowd) {
+			commanded.add(natural);
+		}
+
+		WeatherState commandedStorm = new WeatherState(1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 90.0F);
+		commanded.addOverride(0, 0, 200, 70, commandedStorm, 0L, 12_000L, 64, r);
+
+		WeatherSample afterOverride = ZoneBlender.sample(commanded.zones(), 0, 64, 0, 192.0F, 224.0F, r);
+		check("thunder arrives at full strength, not one fifteenth of it",
+				afterOverride.state().thunder() > 0.99F, String.valueOf(afterOverride.state().thunder()));
+		check("wind arrives above the gale threshold",
+				afterOverride.state().windStrength() >= r.windGale(),
+				afterOverride.state().windStrength() + " vs gale " + r.windGale());
+		check("the bearing is the one that was asked for",
+				Math.abs(MathUtil.angleDelta(afterOverride.state().windDirection(), 90.0F)) < 1.0F,
+				String.valueOf(afterOverride.state().windDirection()));
+
+		// Outside the override the natural weather is untouched: overriding here must not mean
+		// overriding everywhere.
+		WeatherSample beyondOverride = ZoneBlender.sample(commanded.zones(), 350, 64, 0, 192.0F, 224.0F, r);
+		check("natural zones still apply outside the override",
+				beyondOverride.state().thunder() == 0.0F && beyondOverride.coverage() > 0.0F,
+				"thunder " + beyondOverride.state().thunder() + ", coverage " + beyondOverride.coverage());
+
+		System.out.println("\n[37] a second set replaces the first instead of stacking with it");
+		commanded.removeOverridesCovering(0, 0);
+		commanded.addOverride(0, 0, 200, 70,
+				new WeatherState(1.0F, 0.0F, 1.0F, 0.0F, 1.0F, 90.0F), 0L, 12_000L, 64, r);
+
+		check("only one command zone remains", commanded.overrideCount() == 1,
+				commanded.overrideCount() + " command zones");
+
+		WeatherSample replaced = ZoneBlender.sample(commanded.zones(), 0, 64, 0, 192.0F, 224.0F, r);
+		check("turning precipitation off actually turns it off",
+				replaced.state().precip() == 0.0F, String.valueOf(replaced.state().precip()));
+		check("the axes that were not touched survive",
+				replaced.state().thunder() > 0.99F && replaced.state().windStrength() > 0.99F,
+				"thunder " + replaced.state().thunder() + ", wind " + replaced.state().windStrength());
+
+		check("removing overrides leaves the natural zones alone",
+				commanded.zones().size() == crowd.size() + 1,
+				commanded.zones().size() + " zones after replacing");
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");

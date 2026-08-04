@@ -245,8 +245,33 @@ public final class ZoneManager {
 	}
 
 	/**
-	 * Inserts a command-driven zone at the front, where the blender's maximum-weight rule lets it
-	 * dominate whatever natural weather it overlaps.
+	 * Drops command zones covering a point.
+	 *
+	 * <p>What makes a second {@code set} replace the first rather than average with it. The caller
+	 * samples the weather before calling this, so the axes it is not changing survive: setting
+	 * precipitation and then thunder leaves both, while setting precipitation twice leaves one patch
+	 * rather than two half-strength ones.
+	 *
+	 * @return how many were removed
+	 */
+	public int removeOverridesCovering(double x, double z) {
+		int removed = 0;
+
+		for (int i = zones.size() - 1; i >= 0; i--) {
+			WeatherZone zone = zones.get(i);
+
+			if (zone.isCommandOverride() && zone.weightAt(x, z) > 0.0F) {
+				zones.remove(i);
+				removed++;
+			}
+		}
+
+		return removed;
+	}
+
+	/**
+	 * Inserts a command-driven zone at the front, where the blender drops natural weather in its
+	 * favour.
 	 *
 	 * <p>Overrides are capped, and the cap evicts rather than refuses. An operator setting weather
 	 * repeatedly is the normal case, and each call leaves a zone behind that outlives its command;

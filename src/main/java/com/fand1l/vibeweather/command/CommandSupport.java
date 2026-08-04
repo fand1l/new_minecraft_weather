@@ -80,6 +80,11 @@ final class CommandSupport {
 		WeatherRules rules = config.toRules();
 		Vec3 position = source.getPosition();
 
+		// Replace, do not stack. The caller has already sampled, so axes it did not touch are carried
+		// in `state`; leaving the old zone in place would instead average the two and halve whatever
+		// was just asked for.
+		manager.zoneManager().removeOverridesCovering(position.x, position.z);
+
 		manager.zoneManager().addOverride(
 				position.x,
 				position.z,

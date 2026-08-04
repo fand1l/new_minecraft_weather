@@ -26,6 +26,13 @@ public final class ZoneBlender {
 	 * <p>Coverage is the <em>maximum</em> weight rather than the sum. Summing would let two zones
 	 * that each half-cover a point add up to full coverage, hardening a boundary that should stay
 	 * soft; the max keeps the softest edge intact and stays within 0..1 without normalisation.
+	 *
+	 * <h2>Commands win outright</h2>
+	 * If any zone covering the point came from a command, the natural zones are dropped entirely and
+	 * only overrides are blended. Without this, an override is one voice in an average: with fifteen
+	 * zones around a player, {@code /vibeweather set thunder normal} produced 0.33 and
+	 * {@code set wind gale} produced 0.09 -- below the gale threshold, so neither the tilt nor the
+	 * physics ever ran. "Set" has to mean set.
 	 */
 	public static WeatherSample sample(
 			List<WeatherZone> zones,
@@ -50,6 +57,8 @@ public final class ZoneBlender {
 		float windX = 0.0F;
 		float windZ = 0.0F;
 
+		boolean overrideMode = false;
+
 		for (int i = 0; i < zones.size(); i++) {
 			WeatherZone zone = zones.get(i);
 
@@ -60,6 +69,24 @@ public final class ZoneBlender {
 			float weight = zone.weightAt(x, z);
 
 			if (weight <= 0.0F) {
+				continue;
+			}
+
+			boolean fromCommand = zone.isCommandOverride();
+
+			if (fromCommand && !overrideMode) {
+				// First command zone found: everything natural gathered so far stops counting.
+				overrideMode = true;
+				totalWeight = 0.0F;
+				maxWeight = 0.0F;
+				clouds = 0.0F;
+				precip = 0.0F;
+				thunder = 0.0F;
+				fog = 0.0F;
+				windStrength = 0.0F;
+				windX = 0.0F;
+				windZ = 0.0F;
+			} else if (overrideMode && !fromCommand) {
 				continue;
 			}
 
