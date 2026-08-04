@@ -1021,17 +1021,17 @@ public final class ModelHarness {
 				String.valueOf(contested.state().windDirection()));
 
 		System.out.println("\n[39] cloud cover maps onto a layer opacity");
-		check("clear sky draws no clouds at all", r.cloudOpacity(0.0F) == 0.0F,
-				String.valueOf(r.cloudOpacity(0.0F)));
-		check("overcast is fully covered", r.cloudOpacity(r.overcastFloor()) == 1.0F,
-				String.valueOf(r.cloudOpacity(r.overcastFloor())));
+		check("clear sky draws no clouds at all", r.cloudDensity(0.0F) == 0.0F,
+				String.valueOf(r.cloudDensity(0.0F)));
+		check("overcast is fully covered", r.cloudDensity(r.overcastFloor()) == 1.0F,
+				String.valueOf(r.cloudDensity(r.overcastFloor())));
 		check("anything above overcast stays fully covered rather than overflowing",
-				r.cloudOpacity(1.0F) == 1.0F, String.valueOf(r.cloudOpacity(1.0F)));
+				r.cloudDensity(1.0F) == 1.0F, String.valueOf(r.cloudDensity(1.0F)));
 		check("the bands between are ordered",
-				r.cloudOpacity(r.cloudValue(CloudCover.FEW)) < r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED))
-						&& r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED)) < 1.0F,
-				"few " + r.cloudOpacity(r.cloudValue(CloudCover.FEW))
-						+ ", scattered " + r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED)));
+				r.cloudDensity(r.cloudValue(CloudCover.FEW)) < r.cloudDensity(r.cloudValue(CloudCover.SCATTERED))
+						&& r.cloudDensity(r.cloudValue(CloudCover.SCATTERED)) < 1.0F,
+				"few " + r.cloudDensity(r.cloudValue(CloudCover.FEW))
+						+ ", scattered " + r.cloudDensity(r.cloudValue(CloudCover.SCATTERED)));
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

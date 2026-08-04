@@ -36,6 +36,22 @@ public final class VibeWeatherClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(VibeWeatherClient::tick);
 	}
 
+	/**
+	 * Tells the cloud renderer how much of the sky to fill.
+	 *
+	 * <p>Pushed from the tick rather than read during rendering because the cloud mesh is cached
+	 * until something asks for a rebuild: a value read at draw time would be correct and ignored.
+	 */
+	private static void pushCloudDensity(Minecraft client, ClientWeatherState state) {
+		if (!state.ready() || client.levelRenderer == null) {
+			return;
+		}
+
+		if (client.levelRenderer.cloudRenderer() instanceof CloudDensityTarget target) {
+			target.vibeweather$setCloudDensity(state.rules().cloudDensity(state.cloudCoverAtViewer()));
+		}
+	}
+
 	private static void tick(Minecraft client) {
 		ClientWeatherState state = ClientWeatherState.get();
 
@@ -50,6 +66,7 @@ public final class VibeWeatherClient implements ClientModInitializer {
 		Vec3 position = client.player.position();
 		state.tick(client.level, position.x, position.y, position.z);
 		WindPhysicsClient.tick(client.player);
+		pushCloudDensity(client, state);
 		SodiumCompat.warnOnce(client);
 	}
 }

@@ -184,18 +184,18 @@ public record WeatherRules(
 	}
 
 	/**
-	 * How opaque the cloud layer should be for a given cover, in 0..1.
+	 * What fraction of the sky has cloud in it, for a given cover, in 0..1.
 	 *
-	 * <p>The cloud axis has no vanilla equivalent -- vanilla clouds are one layer with no notion of
-	 * how much sky they take up -- so the axis is expressed as the layer's opacity instead. Clear
-	 * sky means no clouds drawn at all; overcast means exactly what vanilla would have drawn; the
-	 * bands between fade.
+	 * <p>Vanilla clouds are a grid of cells, and a cell either exists or does not, so cover maps onto
+	 * the share of cells kept. Clear sky keeps none, overcast keeps all, the bands between thin out.
+	 * An earlier version treated this as the layer's opacity, which looked like clouds fading rather
+	 * than clearing -- the pattern never changed, only how washed out it was.
 	 *
 	 * <p>Scaled against {@code overcastFloor} rather than against 1, so that the value the model
 	 * treats as "fully overcast" is also the value at which the sky is fully covered on screen. Tying
 	 * it to 1 would leave overcast weather looking thin.
 	 */
-	public float cloudOpacity(float clouds) {
+	public float cloudDensity(float clouds) {
 		return overcastFloor <= 0.0F ? 1.0F : MathUtil.clamp01(clouds / overcastFloor);
 	}
 
