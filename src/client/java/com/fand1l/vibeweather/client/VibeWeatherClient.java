@@ -49,6 +49,7 @@ public final class VibeWeatherClient implements ClientModInitializer {
 
 		Vec3 position = client.player.position();
 		state.tick(client.level, position.x, position.y, position.z);
+		WindPhysicsClient.tick(client.player);
 		SodiumCompat.warnOnce(client);
 	}
 }

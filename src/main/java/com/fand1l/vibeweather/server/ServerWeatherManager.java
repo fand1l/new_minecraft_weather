@@ -252,6 +252,8 @@ public final class ServerWeatherManager {
 				config.render.rainVolume,
 				config.render.windStreaks,
 				config.render.windStreakBudget,
+				config.render.fogThickDistance,
+				config.toWindPhysics(),
 				frozen());
 
 		ServerPlayNetworking.send(player, new VibeWeatherPayloads.ParamsPayload(params.toBytes()));

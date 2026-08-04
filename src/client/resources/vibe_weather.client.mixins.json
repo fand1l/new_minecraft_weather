@@ -3,7 +3,8 @@
 	"package": "com.fand1l.vibeweather.mixin.client",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"ClientLevelPrecipitationMixin"
+		"ClientLevelPrecipitationMixin",
+		"FogRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

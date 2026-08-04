@@ -524,6 +524,25 @@ public void tickThunder(final LevelChunk chunk) {
 
 ---
 
+## Відкриті питання — що саме треба перевірити
+
+Написане нижче **вже є в коді**, але я його не читав у джерелах 26.2. Кожен рядок — або
+компіляційна помилка (дешево), або тихий баг (дорого); позначено, що саме.
+
+| # | Що | Де використано | Ціна помилки | Команда |
+|---|---|---|---|---|
+| 1 | пакет `net.minecraft.client.Camera` | сигнатура M7 | компіляція | `./tools/find-class.sh Camera DeltaTracker` |
+| 2 | `Entity#getYRot()`, `Entity#blockPosition()` | вітер: напрямок польоту, перевірка даху | компіляція | `./tools/show-source.sh -g Entity getYRot` |
+| 3 | як перебрати сутності рівня | вітер на мобів, стріли, човни | **блокує** — код ще не написано | `./tools/show-source.sh -g ServerLevel getEntities` |
+| 4 | тіло `WeatherEffectRenderer#extractRenderState` і `#render` | M5 (радіус) і M6 (нахил опадів) | **блокує** — це головна фіча | `./tools/show-source.sh WeatherEffectRenderer extractRenderState render` |
+| 5 | тіло `ServerLevel#tickPrecipitation` | прискорення казана й снігу; **плюс** перевірка, чи M9 не вимикає заодно намерзання льоду | тихий баг | `./tools/show-source.sh ServerLevel tickPrecipitation` |
+| 6 | як програти звук локально | звук дощу/грози | компіляція | `./tools/show-source.sh -g Level playLocalSound` |
+
+Пункт 5 — не формальність: у коментарі M9 написано, що лід не чіпаємо, а код скасовує
+**весь** метод. Одне з двох неправильне, і без тіла я не знаю яке.
+
+---
+
 ## Інструменти
 
 | Скрипт | Питання, на яке відповідає |

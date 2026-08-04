@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.random.RandomGenerator;
 
 import com.fand1l.vibeweather.api.WeatherRules;
+import com.fand1l.vibeweather.api.WindPhysics;
 import com.fand1l.vibeweather.weather.FogRules;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.ZoneSpawnParams;
@@ -199,6 +200,14 @@ public final class VibeWeatherConfig {
 		public int windStreakBudget = 48;
 		public float rainVolume = 1.0F;
 		public boolean tiltEnabled = true;
+		/**
+		 * How far you can see through the thickest fog, in blocks.
+		 *
+		 * <p>The fog axis interpolates from whatever distance the game already computed down to this
+		 * at full thickness, rather than setting an absolute value: vanilla's own fog already varies
+		 * with biome, depth and weather, and overwriting it outright would flatten all of that.
+		 */
+		public float fogThickDistance = 24.0F;
 	}
 
 	/** How vanilla systems see our weather. */
@@ -307,6 +316,30 @@ public final class VibeWeatherConfig {
 				fog.nearWaterChance,
 				fog.downpourChance,
 				fog.thickBias);
+	}
+
+	/**
+	 * The wind constants, as sent to the client.
+	 *
+	 * <p>The client gets these rather than a copy of the config file because it needs exactly this
+	 * much and nothing else: a player's own movement is simulated locally, so the push has to be
+	 * applied there, and inventing the numbers client-side would break the promise that the file is
+	 * the only place they live.
+	 */
+	public WindPhysics toWindPhysics() {
+		return new WindPhysics(
+				wind.physicsEnabled,
+				wind.minEffectStrength,
+				wind.skipSpectators,
+				wind.skipCreativeFlight,
+				wind.standingPush,
+				wind.movingPush,
+				wind.arrowPush,
+				wind.mobPush,
+				wind.boatPush,
+				wind.elytraTailwind,
+				wind.elytraHeadwind,
+				wind.maxPushPerTick);
 	}
 
 	public WeatherTransitions toTransitions(RandomGenerator random) {

@@ -9,6 +9,7 @@ import com.fand1l.vibeweather.api.ThunderLevel;
 import com.fand1l.vibeweather.api.WeatherRules;
 import com.fand1l.vibeweather.api.WeatherSample;
 import com.fand1l.vibeweather.api.WeatherState;
+import com.fand1l.vibeweather.api.WindPhysics;
 import com.fand1l.vibeweather.util.MathUtil;
 import com.fand1l.vibeweather.weather.FogRules;
 import com.fand1l.vibeweather.weather.GridCodec;
@@ -683,6 +684,14 @@ public final class ModelHarness {
 				back.tiltEnabled() == params0.tiltEnabled() && back.windStreaks() == params0.windStreaks()
 						&& back.frozen() == params0.frozen(),
 				"a flag differed");
+
+		// Twelve numbers in a row of the same shape: exactly the payload where a swapped pair on the
+		// writer would go unnoticed until someone reported the wind pushing boats like arrows.
+		check("every wind constant survives in the right slot",
+				back.wind().equals(params0.wind()), "wind physics differed: " + back.wind());
+		check("the fog distance survives",
+				back.fogThickDistance() == params0.fogThickDistance(),
+				String.valueOf(back.fogThickDistance()));
 		System.out.println("        " + params0.toBytes().length + " bytes, sent once per join");
 
 		check("empty params fall back to defaults",
@@ -849,6 +858,56 @@ public final class ModelHarness {
 		check("a reset with no previous grid keeps its changes",
 				GridInterpolator.unitAt(rebuiltFromReset, 16.0, 0.0, GridCodec.FIELD_PRECIP) == atNode,
 				"the first packet after a reset was dropped");
+
+		System.out.println("\n[34] wind physics starts at gale and points the way the wind blows");
+		WindPhysics windRules = WindPhysics.defaults();
+		float gale = r.windGale();
+
+		check("a breeze moves nothing",
+				windRules.magnitude(WindPhysics.Target.PLAYER_MOVING, gale - 0.01F, gale) == 0.0,
+				"a sub-gale wind pushed a player");
+		check("a gale moves a player",
+				windRules.magnitude(WindPhysics.Target.PLAYER_MOVING, gale, gale) > 0.0, "no push at gale");
+		check("a moving player catches more wind than a standing one",
+				windRules.magnitude(WindPhysics.Target.PLAYER_MOVING, 1.0F, gale)
+						> windRules.magnitude(WindPhysics.Target.PLAYER_STANDING, 1.0F, gale),
+				"standing push was not smaller");
+		check("no push exceeds the per-tick ceiling",
+				windRules.magnitude(WindPhysics.Target.BOAT, 1.0F, gale) <= windRules.maxPushPerTick(),
+				"the ceiling was breached");
+
+		WindPhysics off = new WindPhysics(false, 0.0F, true, true,
+				1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+		check("disabling wind physics disables all of it",
+				off.magnitude(WindPhysics.Target.MOB, 1.0F, gale) == 0.0
+						&& off.elytraPush(1.0F, 0.0F, 0.0F, gale) == 0.0,
+				"something still pushed");
+
+		// The convention, pinned: a bearing is where the wind blows TO, and its vector is (sin, cos).
+		// Zone drift already assumes this, so a disagreement here would send the rain one way and the
+		// storm the other.
+		check("bearing 0 pushes towards +z",
+				WindPhysics.pushX(1.0, 0.0F) < 1e-9 && Math.abs(WindPhysics.pushZ(1.0, 0.0F) - 1.0) < 1e-9,
+				WindPhysics.pushX(1.0, 0.0F) + ", " + WindPhysics.pushZ(1.0, 0.0F));
+		check("bearing 90 pushes towards +x",
+				Math.abs(WindPhysics.pushX(1.0, 90.0F) - 1.0) < 1e-9 && Math.abs(WindPhysics.pushZ(1.0, 90.0F)) < 1e-9,
+				WindPhysics.pushX(1.0, 90.0F) + ", " + WindPhysics.pushZ(1.0, 90.0F));
+
+		// Minecraft yaw grows the other way round the compass. If this sign is wrong every tailwind
+		// becomes a headwind, and nothing else in the mod would notice.
+		check("a Minecraft yaw of 0 is a bearing of 0", WindPhysics.bearingFromYaw(0.0F) == 0.0F,
+				String.valueOf(WindPhysics.bearingFromYaw(0.0F)));
+		check("a Minecraft yaw of 90 faces -x, which is bearing 270",
+				WindPhysics.bearingFromYaw(90.0F) == 270.0F, String.valueOf(WindPhysics.bearingFromYaw(90.0F)));
+
+		double tail = windRules.elytraPush(1.0F, 90.0F, 90.0F, gale);
+		double head = windRules.elytraPush(1.0F, 90.0F, 270.0F, gale);
+		double cross = windRules.elytraPush(1.0F, 90.0F, 0.0F, gale);
+		check("gliding with the wind is a tailwind", tail > 0.0, String.valueOf(tail));
+		check("gliding into it is a headwind", head < 0.0, String.valueOf(head));
+		check("a crosswind neither helps nor hinders", Math.abs(cross) < 1e-9, String.valueOf(cross));
+		check("the headwind is weaker than the tailwind, as configured",
+				Math.abs(head) < Math.abs(tail), tail + " vs " + head);
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

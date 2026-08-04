@@ -204,6 +204,11 @@ public final class ClientWeatherState implements WeatherHooks.ClientSource {
 		return MathUtil.lerpAngle(progress(partialTick), GridInterpolator.angleAt(previous, x, z), now);
 	}
 
+	/** Fog thickness where the viewer is, for the fog hook. */
+	public float fogAtViewer() {
+		return atViewer(GridCodec.FIELD_FOG, 0.0F);
+	}
+
 	/**
 	 * The value at whoever is looking, for the two level-wide methods that have no position argument.
 	 *

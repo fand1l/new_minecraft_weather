@@ -31,14 +31,16 @@ public record ClientWeatherParams(
 		float rainVolume,
 		boolean windStreaks,
 		int windStreakBudget,
+		float fogThickDistance,
+		WindPhysics wind,
 		boolean frozen
 ) {
 	/** Bumped when the field layout changes, so a mismatched client is detected rather than misread. */
-	public static final int FORMAT_VERSION = 1;
+	public static final int FORMAT_VERSION = 2;
 
 	public static ClientWeatherParams defaults() {
 		return new ClientWeatherParams(WeatherRules.defaults(), 192.0F, 224.0F, 96, 20000,
-				0.85F, true, 1.0F, true, 48, false);
+				0.85F, true, 1.0F, true, 48, 24.0F, WindPhysics.defaults(), false);
 	}
 
 	public byte[] toBytes() {
@@ -76,6 +78,21 @@ public record ClientWeatherParams(
 			out.writeFloat(rainVolume);
 			out.writeBoolean(windStreaks);
 			out.writeInt(windStreakBudget);
+			out.writeFloat(fogThickDistance);
+
+			out.writeBoolean(wind.enabled());
+			out.writeFloat(wind.minStrength());
+			out.writeBoolean(wind.skipSpectators());
+			out.writeBoolean(wind.skipCreativeFlight());
+			out.writeDouble(wind.standingPush());
+			out.writeDouble(wind.movingPush());
+			out.writeDouble(wind.arrowPush());
+			out.writeDouble(wind.mobPush());
+			out.writeDouble(wind.boatPush());
+			out.writeDouble(wind.elytraTailwind());
+			out.writeDouble(wind.elytraHeadwind());
+			out.writeDouble(wind.maxPushPerTick());
+
 			out.writeBoolean(frozen);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
@@ -108,12 +125,29 @@ public record ClientWeatherParams(
 					in.readInt(), in.readInt(), in.readInt(), in.readInt(), in.readInt(),
 					in.readFloat());
 
-			return new ClientWeatherParams(rules,
-					in.readFloat(), in.readFloat(),
-					in.readInt(), in.readInt(),
-					in.readFloat(), in.readBoolean(),
-					in.readFloat(), in.readBoolean(), in.readInt(),
-					in.readBoolean());
+			float cloudBottom = in.readFloat();
+			float cloudTop = in.readFloat();
+			int weatherRadius = in.readInt();
+			int maxColumns = in.readInt();
+			float maxTiltTan = in.readFloat();
+			boolean tiltEnabled = in.readBoolean();
+			float rainVolume = in.readFloat();
+			boolean windStreaks = in.readBoolean();
+			int windStreakBudget = in.readInt();
+			float fogThickDistance = in.readFloat();
+
+			// Argument order is guaranteed left to right, so reading inline here is correct; the
+			// locals above exist because a fourteen-argument constructor built entirely from
+			// identical-looking read calls is impossible to check against the writer by eye.
+			WindPhysics wind = new WindPhysics(
+					in.readBoolean(), in.readFloat(), in.readBoolean(), in.readBoolean(),
+					in.readDouble(), in.readDouble(), in.readDouble(), in.readDouble(),
+					in.readDouble(), in.readDouble(), in.readDouble(), in.readDouble());
+			boolean frozen = in.readBoolean();
+
+			return new ClientWeatherParams(rules, cloudBottom, cloudTop, weatherRadius, maxColumns,
+					maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
+					fogThickDistance, wind, frozen);
 		} catch (IOException | IllegalArgumentException e) {
 			// Truncated, or thresholds a WeatherRules refuses. Either way the sender is not one we
 			// understand, so fall back rather than render from half-read numbers.
@@ -128,6 +162,7 @@ public record ClientWeatherParams(
 
 	public ClientWeatherParams withFrozen(boolean value) {
 		return new ClientWeatherParams(rules, cloudBottom, cloudTop, weatherRadius, maxColumns,
-				maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget, value);
+				maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
+				fogThickDistance, wind, value);
 	}
 }
