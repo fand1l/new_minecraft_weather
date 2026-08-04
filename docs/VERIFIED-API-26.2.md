@@ -466,6 +466,7 @@ gameRules.set(GameRules.FIRE_DAMAGE, fireDamage, server);     // set(GameRule<T>
 | `ResourceKey.location()` | **не існує** у 26.2 — `cannot find symbol` на `ResourceKey<Level>`. Ім'я, найімовірніше, змінилось разом із `ResourceLocation` → `Identifier`, але нове я не перевіряв | Метод не потрібен: у лог пишемо сам `level.dimension()`, для сіда беремо `Hashing.hashString(level.dimension().toString())` |
 | `net.minecraft.world.level.GameRules` | **не той пакет** — `cannot find symbol: class GameRules`. Клас нікуди не дівся, переїхав у `net.minecraft.world.level.gamerules` | Виправлено за секцією вище |
 | `net.minecraft.world.entity.animal.horse` | **пакета не існує** — `package ... does not exist`. Кінські класи переїхали | `net.minecraft.world.entity.animal.equine.SkeletonHorse` (`./tools/find-class.sh`) |
+| `Player#displayClientMessage(Component, boolean)` | **не існує** у 26.2 — `cannot find symbol` на `LocalPlayer`. Я позначив його як «доволі стандартний» і не перевірив; це рівно та сама помилка, що й із пакетами | `client.gui.hud.setOverlayMessage(Component, boolean)` — з клієнтського тестмоду Fabric 26.2 (`NetworkingPlayPacketClientTest`). Заодно видно, що `Gui` тепер тримає `hud`, тож і `gui.getChat()` вважати відомим не можна |
 
 Спільне в усіх трьох: **клас або метод нікуди не дівся, змінилось лише його місце**. Тому
 `find-class.sh` і `show-source.sh` закривають цей клас помилок повністю, а пам'ять про

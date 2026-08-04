@@ -41,10 +41,14 @@ public final class SodiumCompat {
 	}
 
 	/**
-	 * Tells the player once, in chat.
+	 * Tells the player once, on screen.
 	 *
 	 * <p>In the log alone this would be missed by exactly the person it is for: someone who installed
 	 * both mods and is wondering why the rain does not lean.
+	 *
+	 * <p>The hotbar overlay rather than chat. {@code Player.displayClientMessage} does not exist in
+	 * 26.2 -- the compiler said so -- and this is the client message call that Fabric's own 26.2 test
+	 * mods use, so it is the one that is actually known to work rather than the one that reads best.
 	 */
 	public static void warnOnce(Minecraft client) {
 		if (!PRESENT || toldThePlayer || client.player == null) {
@@ -52,6 +56,6 @@ public final class SodiumCompat {
 		}
 
 		toldThePlayer = true;
-		client.player.displayClientMessage(Component.translatable("vibeweather.compat.sodium"), false);
+		client.gui.hud.setOverlayMessage(Component.translatable("vibeweather.compat.sodium"), false);
 	}
 }
