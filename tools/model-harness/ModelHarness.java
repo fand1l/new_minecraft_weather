@@ -690,6 +690,9 @@ public final class ModelHarness {
 		check("the fog distance survives",
 				back.fogThickDistance() == params0.fogThickDistance(),
 				String.valueOf(back.fogThickDistance()));
+		check("the cloud height drop survives",
+				back.cloudHeightDrop() == params0.cloudHeightDrop(),
+				String.valueOf(back.cloudHeightDrop()));
 		System.out.println("        " + params0.toBytes().length + " bytes, sent once per join");
 
 		check("empty params fall back to defaults",

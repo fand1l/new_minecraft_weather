@@ -40,4 +40,29 @@ public abstract class CloudRendererMixin {
 
 		return (scaled << 24) | (cloudColor & 0x00FFFFFF);
 	}
+
+	/**
+	 * Sinks the cloud layer as cover fills in.
+	 *
+	 * <p>Opacity alone was not enough, and testing said so plainly: vanilla draws the same cloud
+	 * pattern whatever the alpha, so few and overcast differed only in how washed out they looked,
+	 * never in how much sky they took up. Height is the second dial vanilla hands over as a plain
+	 * argument, and it is the one that changes the feeling of the sky -- a heavy overcast sits low
+	 * and close, a few clouds sit high and far.
+	 *
+	 * <p>This does not make the cover itself denser. Doing that means choosing which cloud cells
+	 * exist, which lives inside the renderer's own mesh building rather than in anything it is
+	 * handed, so it is a separate question and not one to guess at.
+	 */
+	@ModifyVariable(method = "render", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+	private float vibeweather$applyCloudHeight(float cloudHeight) {
+		ClientWeatherState state = ClientWeatherState.get();
+
+		if (!state.ready()) {
+			return cloudHeight;
+		}
+
+		float cover = state.rules().cloudOpacity(state.cloudCoverAtViewer());
+		return cloudHeight - state.params().cloudHeightDrop() * cover;
+	}
 }

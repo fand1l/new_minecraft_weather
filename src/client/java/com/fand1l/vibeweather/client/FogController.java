@@ -2,8 +2,6 @@ package com.fand1l.vibeweather.client;
 
 import net.minecraft.client.renderer.fog.FogData;
 
-import com.fand1l.vibeweather.util.MathUtil;
-
 /**
  * Applies the fog axis to whatever fog the game already worked out.
  *
@@ -37,15 +35,24 @@ public final class FogController {
 			return;
 		}
 
+		float clear = data.environmentalEnd;
 		float thick = state.params().fogThickDistance();
-		float end = MathUtil.lerp(fog, data.environmentalEnd, thick);
 
 		// Never push the far plane outwards. Underwater or in powdered snow the game has already
-		// closed the fog in much further than any weather would, and lerping towards a weather
+		// closed the fog in much further than any weather would, and interpolating towards a weather
 		// distance there would clear it up.
-		if (end < data.environmentalEnd) {
-			data.environmentalEnd = end;
-			data.environmentalStart = Math.min(data.environmentalStart, end * 0.25F);
+		if (clear <= thick) {
+			return;
 		}
+
+		// Geometric, not linear. Visibility reads logarithmically: halving the distance you can see
+		// looks like the same step whether it starts at 400 blocks or at 50. Interpolating linearly
+		// made light fog take 200 blocks down to 147 -- invisible -- while thick took it to 63, so
+		// the axis did nothing for most of its range and then jumped. In log space the same three
+		// bands land at roughly 200, 105 and 40.
+		float end = (float) (clear * Math.pow(thick / clear, fog));
+
+		data.environmentalEnd = end;
+		data.environmentalStart = Math.min(data.environmentalStart, end * 0.25F);
 	}
 }

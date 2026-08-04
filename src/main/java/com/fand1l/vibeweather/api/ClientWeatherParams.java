@@ -30,15 +30,16 @@ public record ClientWeatherParams(
 		boolean windStreaks,
 		int windStreakBudget,
 		float fogThickDistance,
+		float cloudHeightDrop,
 		WindPhysics wind,
 		boolean frozen
 ) {
 	/** Bumped when the field layout changes, so a mismatched client is detected rather than misread. */
-	public static final int FORMAT_VERSION = 2;
+	public static final int FORMAT_VERSION = 3;
 
 	public static ClientWeatherParams defaults() {
 		return new ClientWeatherParams(WeatherRules.defaults(), 192.0F, 224.0F,
-				0.85F, true, 1.0F, true, 48, 24.0F, WindPhysics.defaults(), false);
+				0.85F, true, 1.0F, true, 48, 24.0F, 24.0F, WindPhysics.defaults(), false);
 	}
 
 	public byte[] toBytes() {
@@ -75,6 +76,7 @@ public record ClientWeatherParams(
 			out.writeBoolean(windStreaks);
 			out.writeInt(windStreakBudget);
 			out.writeFloat(fogThickDistance);
+			out.writeFloat(cloudHeightDrop);
 
 			out.writeBoolean(wind.enabled());
 			out.writeFloat(wind.minStrength());
@@ -129,6 +131,7 @@ public record ClientWeatherParams(
 			boolean windStreaks = in.readBoolean();
 			int windStreakBudget = in.readInt();
 			float fogThickDistance = in.readFloat();
+			float cloudHeightDrop = in.readFloat();
 
 			// Argument order is guaranteed left to right, so reading inline here is correct; the
 			// locals above exist because a fourteen-argument constructor built entirely from
@@ -141,7 +144,7 @@ public record ClientWeatherParams(
 
 			return new ClientWeatherParams(rules, cloudBottom, cloudTop,
 					maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
-					fogThickDistance, wind, frozen);
+					fogThickDistance, cloudHeightDrop, wind, frozen);
 		} catch (IOException | IllegalArgumentException e) {
 			// Truncated, or thresholds a WeatherRules refuses. Either way the sender is not one we
 			// understand, so fall back rather than render from half-read numbers.
@@ -157,6 +160,6 @@ public record ClientWeatherParams(
 	public ClientWeatherParams withFrozen(boolean value) {
 		return new ClientWeatherParams(rules, cloudBottom, cloudTop,
 				maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
-				fogThickDistance, wind, value);
+				fogThickDistance, cloudHeightDrop, wind, value);
 	}
 }

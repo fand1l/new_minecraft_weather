@@ -254,6 +254,7 @@ public final class ServerWeatherManager {
 				config.render.windStreaks,
 				config.render.windStreakBudget,
 				config.render.fogThickDistance,
+				config.render.cloudHeightDrop,
 				config.toWindPhysics(),
 				frozen());
 

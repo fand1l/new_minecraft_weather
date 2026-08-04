@@ -213,6 +213,14 @@ public final class VibeWeatherConfig {
 		 * with biome, depth and weather, and overwriting it outright would flatten all of that.
 		 */
 		public float fogThickDistance = 24.0F;
+		/**
+		 * How far the cloud layer sinks, in blocks, at full overcast.
+		 *
+		 * <p>Cover alone reads as clouds fading rather than thickening, because vanilla draws the same
+		 * pattern either way. Dropping the layer as it fills in gives the sky somewhere to go: a heavy
+		 * overcast sits low and close, a few clouds sit high.
+		 */
+		public float cloudHeightDrop = 24.0F;
 	}
 
 	/** How vanilla systems see our weather. */
