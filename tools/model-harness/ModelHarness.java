@@ -1017,6 +1017,19 @@ public final class ModelHarness {
 				Math.abs(MathUtil.angleDelta(contested.state().windDirection(), 90.0F)) < 10.0F,
 				String.valueOf(contested.state().windDirection()));
 
+		System.out.println("\n[39] cloud cover maps onto a layer opacity");
+		check("clear sky draws no clouds at all", r.cloudOpacity(0.0F) == 0.0F,
+				String.valueOf(r.cloudOpacity(0.0F)));
+		check("overcast is fully covered", r.cloudOpacity(r.overcastFloor()) == 1.0F,
+				String.valueOf(r.cloudOpacity(r.overcastFloor())));
+		check("anything above overcast stays fully covered rather than overflowing",
+				r.cloudOpacity(1.0F) == 1.0F, String.valueOf(r.cloudOpacity(1.0F)));
+		check("the bands between are ordered",
+				r.cloudOpacity(r.cloudValue(CloudCover.FEW)) < r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED))
+						&& r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED)) < 1.0F,
+				"few " + r.cloudOpacity(r.cloudValue(CloudCover.FEW))
+						+ ", scattered " + r.cloudOpacity(r.cloudValue(CloudCover.SCATTERED)));
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");

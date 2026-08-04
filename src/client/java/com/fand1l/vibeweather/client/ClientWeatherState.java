@@ -210,6 +210,18 @@ public final class ClientWeatherState implements WeatherHooks.ClientSource {
 	}
 
 	/**
+	 * Cloud cover where the viewer is, <em>without</em> the altitude falloff.
+	 *
+	 * <p>Every other axis fades out above the cloud band, because that is what climbing out of a
+	 * storm means. Cloud cover is the exception: flying above the layer should let you look down on
+	 * it, not make it disappear. Applying the falloff here would delete the clouds at exactly the
+	 * height where they are most worth seeing.
+	 */
+	public float cloudCoverAtViewer() {
+		return current == null ? 0.0F : unit(viewerX, viewerZ, GridCodec.FIELD_CLOUDS, 0.0F);
+	}
+
+	/**
 	 * Wind strength where the viewer is, for the precipitation tilt.
 	 *
 	 * <p>One reading per frame rather than one per column. Wind varies over hundreds of blocks and
