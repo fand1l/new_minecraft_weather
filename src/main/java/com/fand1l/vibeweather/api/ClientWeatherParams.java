@@ -24,8 +24,6 @@ public record ClientWeatherParams(
 		WeatherRules rules,
 		float cloudBottom,
 		float cloudTop,
-		int weatherRadius,
-		int maxColumns,
 		float maxTiltTan,
 		boolean tiltEnabled,
 		float rainVolume,
@@ -39,7 +37,7 @@ public record ClientWeatherParams(
 	public static final int FORMAT_VERSION = 2;
 
 	public static ClientWeatherParams defaults() {
-		return new ClientWeatherParams(WeatherRules.defaults(), 192.0F, 224.0F, 96, 20000,
+		return new ClientWeatherParams(WeatherRules.defaults(), 192.0F, 224.0F,
 				0.85F, true, 1.0F, true, 48, 24.0F, WindPhysics.defaults(), false);
 	}
 
@@ -71,8 +69,6 @@ public record ClientWeatherParams(
 
 			out.writeFloat(cloudBottom);
 			out.writeFloat(cloudTop);
-			out.writeInt(weatherRadius);
-			out.writeInt(maxColumns);
 			out.writeFloat(maxTiltTan);
 			out.writeBoolean(tiltEnabled);
 			out.writeFloat(rainVolume);
@@ -127,8 +123,6 @@ public record ClientWeatherParams(
 
 			float cloudBottom = in.readFloat();
 			float cloudTop = in.readFloat();
-			int weatherRadius = in.readInt();
-			int maxColumns = in.readInt();
 			float maxTiltTan = in.readFloat();
 			boolean tiltEnabled = in.readBoolean();
 			float rainVolume = in.readFloat();
@@ -145,7 +139,7 @@ public record ClientWeatherParams(
 					in.readDouble(), in.readDouble(), in.readDouble(), in.readDouble());
 			boolean frozen = in.readBoolean();
 
-			return new ClientWeatherParams(rules, cloudBottom, cloudTop, weatherRadius, maxColumns,
+			return new ClientWeatherParams(rules, cloudBottom, cloudTop,
 					maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
 					fogThickDistance, wind, frozen);
 		} catch (IOException | IllegalArgumentException e) {
@@ -161,7 +155,7 @@ public record ClientWeatherParams(
 	}
 
 	public ClientWeatherParams withFrozen(boolean value) {
-		return new ClientWeatherParams(rules, cloudBottom, cloudTop, weatherRadius, maxColumns,
+		return new ClientWeatherParams(rules, cloudBottom, cloudTop,
 				maxTiltTan, tiltEnabled, rainVolume, windStreaks, windStreakBudget,
 				fogThickDistance, wind, value);
 	}

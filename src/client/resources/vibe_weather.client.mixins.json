@@ -4,7 +4,8 @@
 	"compatibilityLevel": "JAVA_25",
 	"client": [
 		"ClientLevelPrecipitationMixin",
-		"FogRendererMixin"
+		"FogRendererMixin",
+		"WeatherEffectRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

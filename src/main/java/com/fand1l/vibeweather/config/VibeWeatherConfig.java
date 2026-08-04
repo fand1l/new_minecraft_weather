@@ -153,6 +153,13 @@ public final class VibeWeatherConfig {
 		public double maxPushPerTick = 0.05;
 		public double leafDrift = 0.02;
 		/**
+		 * How far from a player entities are pushed, in blocks.
+		 *
+		 * <p>Scoped to players rather than to the dimension: wind nobody can see does not need
+		 * simulating, and this keeps the per-tick cost proportional to how many people are online.
+		 */
+		public double entityRadius = 64.0;
+		/**
 		 * Extra entity types the boat rule applies to, as registry ids.
 		 *
 		 * <p>Vanilla boats are matched by class ({@code vehicle.boat.AbstractBoat}, which moved into
@@ -189,9 +196,7 @@ public final class VibeWeatherConfig {
 	/** Client-side rendering. */
 	public static final class Render {
 		/** Overrides the vanilla weather radius option, in blocks. */
-		public int weatherRadius = 96;
 		/** Ceiling on drawn precipitation columns, the guard against a large radius costing frames. */
-		public int maxColumns = 20000;
 		/** Tangent of the maximum precipitation tilt at full wind. */
 		public float maxTiltTan = 0.85F;
 		public float cloudBottom = 192.0F;
@@ -393,8 +398,9 @@ public final class VibeWeatherConfig {
 					+ render.cloudBottom + ".." + render.cloudTop);
 		}
 
-		if (render.maxColumns < 1) {
-			throw new IllegalArgumentException("render.max_columns must be >= 1, got " + render.maxColumns);
+		if (render.fogThickDistance <= 0.0F) {
+			throw new IllegalArgumentException("render.fog_thick_distance must be positive, got "
+					+ render.fogThickDistance);
 		}
 
 		if (transitions.durationMinTicks < 1 || transitions.durationMaxTicks < transitions.durationMinTicks) {

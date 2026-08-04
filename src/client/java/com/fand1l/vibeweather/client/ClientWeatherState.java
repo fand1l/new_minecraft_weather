@@ -210,6 +210,22 @@ public final class ClientWeatherState implements WeatherHooks.ClientSource {
 	}
 
 	/**
+	 * Wind strength where the viewer is, for the precipitation tilt.
+	 *
+	 * <p>One reading per frame rather than one per column. Wind varies over hundreds of blocks and
+	 * the rain curtain is fifteen deep, so a per-column reading would cost a thousand lookups a frame
+	 * to produce the same number.
+	 */
+	public float windStrengthAtViewer() {
+		return atViewer(GridCodec.FIELD_WIND, 0.0F);
+	}
+
+	/** Wind bearing where the viewer is. */
+	public float windBearingAtViewer() {
+		return current == null ? 0.0F : windDirection(viewerX, viewerZ, 0.0F);
+	}
+
+	/**
 	 * The value at whoever is looking, for the two level-wide methods that have no position argument.
 	 *
 	 * <p>Those exist in vanilla because its weather is global. With local weather the only defensible

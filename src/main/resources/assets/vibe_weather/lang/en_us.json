@@ -42,7 +42,5 @@
 	"vibeweather.wind.breeze": "breeze",
 	"vibeweather.wind.gale": "gale",
 
-	"vibeweather.compat.sodium": "Vibe Weather: Sodium detected. Precipitation tilt and the custom weather draw are disabled; the weather model, sounds and wind physics still work.",
-
-	"options.vibeweather.weather_radius": "Weather Radius"
+	"vibeweather.compat.sodium": "Vibe Weather: Sodium detected. This mod draws nothing of its own, so weather, sounds, fog and wind are unaffected. Precipitation tilt rides on vanilla's weather renderer and will be missing if Sodium has replaced it."
 }

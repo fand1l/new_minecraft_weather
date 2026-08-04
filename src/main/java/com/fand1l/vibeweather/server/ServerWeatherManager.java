@@ -17,6 +17,7 @@ import com.fand1l.vibeweather.api.WeatherRules;
 import com.fand1l.vibeweather.api.WeatherSample;
 import com.fand1l.vibeweather.config.VibeWeatherConfig;
 import com.fand1l.vibeweather.net.VibeWeatherPayloads;
+import com.fand1l.vibeweather.server.effects.WindDriver;
 import com.fand1l.vibeweather.weather.WeatherGridBuilder;
 import com.fand1l.vibeweather.weather.WeatherTransitions;
 import com.fand1l.vibeweather.weather.WeatherZone;
@@ -45,6 +46,7 @@ public final class ServerWeatherManager {
 	private final ServerLevel level;
 	private final ZoneManager zones = new ZoneManager();
 	private final Map<UUID, Tracked> tracked = new HashMap<>();
+	private final WindDriver windDriver = new WindDriver();
 	private final RandomGenerator random;
 
 	private WeatherSavedData saved;
@@ -123,6 +125,7 @@ public final class ServerWeatherManager {
 			tickZones(config, rules);
 		}
 
+		windDriver.tick(level, this, config);
 		syncPlayers(config, rules);
 	}
 
@@ -245,8 +248,6 @@ public final class ServerWeatherManager {
 				config.toRules(),
 				config.render.cloudBottom,
 				config.render.cloudTop,
-				config.render.weatherRadius,
-				config.render.maxColumns,
 				config.render.maxTiltTan,
 				config.render.tiltEnabled,
 				config.render.rainVolume,

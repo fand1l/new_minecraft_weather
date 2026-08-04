@@ -676,9 +676,7 @@ public final class ModelHarness {
 		check("the cloud band survives",
 				back.cloudBottom() == params0.cloudBottom() && back.cloudTop() == params0.cloudTop(),
 				back.cloudBottom() + ".." + back.cloudTop());
-		check("render limits survive",
-				back.weatherRadius() == params0.weatherRadius() && back.maxColumns() == params0.maxColumns()
-						&& back.maxTiltTan() == params0.maxTiltTan(),
+		check("render limits survive", back.maxTiltTan() == params0.maxTiltTan(),
 				"a render limit differed");
 		check("flags survive",
 				back.tiltEnabled() == params0.tiltEnabled() && back.windStreaks() == params0.windStreaks()
@@ -908,6 +906,32 @@ public final class ModelHarness {
 		check("a crosswind neither helps nor hinders", Math.abs(cross) < 1e-9, String.valueOf(cross));
 		check("the headwind is weaker than the tailwind, as configured",
 				Math.abs(head) < Math.abs(tail), tail + " vs " + head);
+
+		System.out.println("\n[35] fractional effect rates round to whole repeats without drifting");
+		check("a rate of zero never fires", MathUtil.stochasticCount(0.0F, 0.0F) == 0
+						&& MathUtil.stochasticCount(0.0F, 0.999F) == 0, "fired at zero");
+		check("a whole rate is exact", MathUtil.stochasticCount(3.0F, 0.0F) == 3
+						&& MathUtil.stochasticCount(3.0F, 0.999F) == 3, "a whole rate varied");
+		check("half a repeat is one half the time",
+				MathUtil.stochasticCount(0.5F, 0.4F) == 1 && MathUtil.stochasticCount(0.5F, 0.6F) == 0,
+				"the fraction did not act as a probability");
+
+		// The property that matters: drizzle must fill a cauldron slower than rain, not never and not
+		// as fast. Rounding either way would collapse the level axis at exactly this point.
+		int drizzleHits = 0;
+		int downpourHits = 0;
+		Random rateRng = new Random(77L);
+
+		for (int i = 0; i < 100_000; i++) {
+			drizzleHits += MathUtil.stochasticCount(0.5F, rateRng.nextFloat());
+			downpourHits += MathUtil.stochasticCount(3.0F, rateRng.nextFloat());
+		}
+
+		check("the long-run average matches the rate",
+				Math.abs(drizzleHits / 100_000.0 - 0.5) < 0.01 && downpourHits == 300_000,
+				drizzleHits + " and " + downpourHits);
+		System.out.println("        drizzle fired " + drizzleHits + " times in 100000 ticks, downpour "
+				+ downpourHits);
 
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);

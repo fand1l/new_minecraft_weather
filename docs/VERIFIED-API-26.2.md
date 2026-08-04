@@ -524,6 +524,91 @@ public void tickThunder(final LevelChunk chunk) {
 
 ---
 
+## Рендер опадів — реальні тіла 26.2
+
+`extractRenderState` (рядки 62–94) і `renderInstances` (184–220). Три речі, які змінили план:
+
+**1. Радіус погоди жорстко обмежений 15 блоками.** `renderInstances` індексує таблицю розмірів
+колонок так:
+
+```java
+int index = (column.z - Mth.floor(cameraPos.z) + 16) * 32 + column.x - Mth.floor(cameraPos.x) + 16;
+float halfSizeX = this.columnSizeX[index] / 2.0F;
+```
+
+Масив 32×32 = 1024 елементи, індекс валідний лише для зміщень ±15. Ніякого клемпа немає.
+Тобто наш конфіг із `weather_radius = 96` не «розширив би» дощ, а поклав би рендер-тред
+з `ArrayIndexOutOfBoundsException`. **M5 викреслено**, поле з конфігу прибрано.
+
+**2. Нахил не потребує жодного власного draw.** Уся GPU-частина (`RenderPipelines`,
+`OutputTarget.WEATHER_TARGET`, `ByteBufferBuilder`, `MeshData`, `RenderPass`, юніформи) живе
+в `render`, а геометрію пише приватний `renderInstances`. Досить замінити другий — і весь
+Blaze3D/Vulkan код лишається ванільним. **У моді немає ні власного пайплайна, ні шейдера, ні
+сирого графічного виклику.**
+
+**3. Точка входу M4 підтверджена**: `level.getPrecipitationAt(mutablePos.set(x, cameraBlockY, z))`
+у циклі `extractRenderState`. Тобто ванільний перебір колонок уже наш.
+
+Ванільна геометрія колонки, яку M6 відтворює (верхня пара зсувається проти вітру):
+
+```java
+float alpha = Mth.lerp(Math.min(distanceSq / radiusSq, 1.0F), maxAlpha, 0.5F) * intensity;
+int color = ARGB.white(alpha);
+float v0 = column.bottomY * 0.25F + column.vOffset;   // так, v0 рахується з bottomY
+float v1 = column.topY * 0.25F + column.vOffset;
+builder.addVertex(x0, y1, z0).setUv(u0, v0).setColor(color).setLight(column.lightCoords);
+builder.addVertex(x1, y1, z1).setUv(u1, v0)...
+builder.addVertex(x1, y0, z1).setUv(u1, v1)...
+builder.addVertex(x0, y0, z0).setUv(u0, v1)...
+```
+
+---
+
+## `ServerLevel#tickPrecipitation` — реальне тіло
+
+```java
+public void tickPrecipitation(final BlockPos pos) {
+    BlockPos topPos = this.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos);
+    BlockPos belowPos = topPos.below();
+    Biome biome = this.getBiome(topPos).value();
+    if (biome.shouldFreeze(this, belowPos)) {                  // <-- ПОЗА if (isRaining())
+        this.setBlockAndUpdate(belowPos, Blocks.ICE.defaultBlockState());
+    }
+    if (this.isRaining()) {
+        int maxHeight = this.getGameRules().get(GameRules.MAX_SNOW_ACCUMULATION_HEIGHT);
+        if (maxHeight > 0 && biome.shouldSnow(this, topPos)) { ... SnowLayerBlock.LAYERS ... }
+        Biome.Precipitation p = biome.getPrecipitationAt(belowPos, this.getSeaLevel());
+        if (p != NONE) { belowState.getBlock().handlePrecipitation(belowState, this, belowPos, p); }
+    }
+}
+```
+
+**Це підтвердило баг**, який я сам позначив як підозру: стара M9 скасовувала весь метод, коли
+локально не було опадів, тобто **вимикала намерзання льоду** скрізь, де не йшов дощ. Тепер тіло
+відтворене: заморозка виконується завжди, локально гейтиться лише дощова половина.
+
+---
+
+## Інше, підтверджене цим раундом
+
+```java
+net.minecraft.client.Camera            net.minecraft.client.DeltaTracker
+public float getYRot();                // Entity, рядок 3870
+public BlockPos blockPosition();       // Entity, рядок 3702
+// перебір сутностей — форма з рядка 630 ServerLevel:
+this.getEntitiesOfClass(LivingEntity.class, box, predicate);
+public <T extends Entity> List<? extends T> getEntities(EntityTypeTest<Entity,T>, Predicate<? super T>);
+public void playLocalSound(BlockPos, SoundEvent, SoundSource, float volume, float pitch, boolean distanceDelay);
+public void playLocalSound(Entity, SoundEvent, SoundSource, float, float);
+```
+
+Звук дощу окремо писати не треба: ванільний `ClientLevel.tickWeatherEffects` уже питає
+`getPrecipitationAt` (наш M4) і `getRainLevel` (наш M3), тож і бризки, і шум дощу стали
+локальними задарма. Що це ламає: конфіг `render.rain_volume` не має на що впливати —
+лишений як позначка, а не як робоча ручка.
+
+---
+
 ## Відкриті питання — що саме треба перевірити
 
 Написане нижче **вже є в коді**, але я його не читав у джерелах 26.2. Кожен рядок — або
@@ -531,15 +616,9 @@ public void tickThunder(final LevelChunk chunk) {
 
 | # | Що | Де використано | Ціна помилки | Команда |
 |---|---|---|---|---|
-| 1 | пакет `net.minecraft.client.Camera` | сигнатура M7 | компіляція | `./tools/find-class.sh Camera DeltaTracker` |
-| 2 | `Entity#getYRot()`, `Entity#blockPosition()` | вітер: напрямок польоту, перевірка даху | компіляція | `./tools/show-source.sh -g Entity getYRot` |
-| 3 | як перебрати сутності рівня | вітер на мобів, стріли, човни | **блокує** — код ще не написано | `./tools/show-source.sh -g ServerLevel getEntities` |
-| 4 | тіло `WeatherEffectRenderer#extractRenderState` і `#render` | M5 (радіус) і M6 (нахил опадів) | **блокує** — це головна фіча | `./tools/show-source.sh WeatherEffectRenderer extractRenderState render` |
-| 5 | тіло `ServerLevel#tickPrecipitation` | прискорення казана й снігу; **плюс** перевірка, чи M9 не вимикає заодно намерзання льоду | тихий баг | `./tools/show-source.sh ServerLevel tickPrecipitation` |
-| 6 | як програти звук локально | звук дощу/грози | компіляція | `./tools/show-source.sh -g Level playLocalSound` |
-
-Пункт 5 — не формальність: у коментарі M9 написано, що лід не чіпаємо, а код скасовує
-**весь** метод. Одне з двох неправильне, і без тіла я не знаю яке.
+| 1 | чи `columnSizeX`/`columnSizeZ` справді `final` | `@Shadow @Final` у M6 | mixin-помилка при старті | `./tools/show-source.sh -g WeatherEffectRenderer columnSize` |
+| 2 | пакет `Projectile` | вітер на стріли | компіляція | `./tools/find-class.sh Projectile AbstractArrow` |
+| 3 | межі опції `Options.weatherRadius()` | підтвердити стелю 15 | нічого — просто цікаво | `./tools/show-source.sh Options weatherRadius` |
 
 ---
 

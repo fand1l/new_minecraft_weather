@@ -94,4 +94,25 @@ public final class MathUtil {
 	public static float ratePerTick(int ticks) {
 		return ticks <= 0 ? 1.0F : 1.0F / ticks;
 	}
+	/**
+	 * Turns a fractional rate into a whole number of repeats, keeping the long-run average exact.
+	 *
+	 * <p>"Fill a cauldron half as fast in drizzle" has no integer answer per tick. Rounding down
+	 * would make drizzle fill nothing at all; rounding up would make it fill as fast as rain. Taking
+	 * the fractional part as a probability gives the right average without ever running a partial
+	 * effect.
+	 *
+	 * <p>The roll is a parameter rather than an internal generator so the result is a pure function
+	 * of its inputs, and so the caller decides which random stream is consumed.
+	 *
+	 * @param roll a value in 0..1
+	 */
+	public static int stochasticCount(float scale, float roll) {
+		if (scale <= 0.0F) {
+			return 0;
+		}
+
+		int whole = (int) scale;
+		return roll < scale - whole ? whole + 1 : whole;
+	}
 }

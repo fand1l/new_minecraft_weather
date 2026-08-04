@@ -42,7 +42,5 @@
 	"vibeweather.wind.breeze": "бриз",
 	"vibeweather.wind.gale": "шторм",
 
-	"vibeweather.compat.sodium": "Vibe Weather: виявлено Sodium. Нахил опадів і власний рендер погоди вимкнено; модель погоди, звуки й фізика вітру працюють.",
-
-	"options.vibeweather.weather_radius": "Радіус погоди"
+	"vibeweather.compat.sodium": "Vibe Weather: виявлено Sodium. Мод не малює нічого власного, тож погода, звуки, туман і вітер працюють. Нахил опадів вбудований у ванільний рендер погоди й зникне лише якщо Sodium замінив саме його."
 }
