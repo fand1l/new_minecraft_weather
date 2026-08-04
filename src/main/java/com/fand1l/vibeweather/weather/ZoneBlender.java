@@ -14,6 +14,20 @@ import com.fand1l.vibeweather.util.MathUtil;
  * player's weather grid, and once per query for every gameplay hook, so it must not churn.
  */
 public final class ZoneBlender {
+	/**
+	 * Smallest share a zone gets when its bearing is combined with others.
+	 *
+	 * <p>Bearings are accumulated as vectors scaled by wind strength, so that a gale outvotes a
+	 * breeze instead of being averaged into a compromise nobody asked for. Taken literally that has a
+	 * hole: a zone with zero strength contributes a zero-length vector, so a field of calm zones
+	 * collapses to a bearing of zero no matter what direction they actually store. That is not
+	 * academic -- {@code /vibeweather set wind_direction 270} in calm weather stored 270 and read
+	 * back as 0, and the rain leaned the wrong way or not at all.
+	 *
+	 * <p>The floor keeps a calm zone's bearing alive without letting it steer a windy one.
+	 */
+	private static final float BEARING_FLOOR = 0.05F;
+
 	private ZoneBlender() {
 	}
 
@@ -101,8 +115,9 @@ public final class ZoneBlender {
 			windStrength += state.windStrength() * weight;
 
 			double radians = Math.toRadians(state.windDirection());
-			windX += (float) Math.sin(radians) * state.windStrength() * weight;
-			windZ += (float) Math.cos(radians) * state.windStrength() * weight;
+			float bearingWeight = Math.max(state.windStrength(), BEARING_FLOOR) * weight;
+			windX += (float) Math.sin(radians) * bearingWeight;
+			windZ += (float) Math.cos(radians) * bearingWeight;
 		}
 
 		float altitude = WeatherSample.altitudeFactor(y, cloudBottom, cloudTop);

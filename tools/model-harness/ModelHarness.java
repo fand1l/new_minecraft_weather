@@ -996,6 +996,27 @@ public final class ModelHarness {
 				commanded.zones().size() == crowd.size() + 1,
 				commanded.zones().size() + " zones after replacing");
 
+		System.out.println("\n[38] a bearing survives calm weather, and a gale still outvotes a breeze");
+
+		// Setting a direction without a strength used to store 270 and read back 0, because the
+		// bearing vector was scaled by wind strength and a calm zone contributes nothing.
+		List<WeatherZone> calmButDirected = List.of(new WeatherZone(200, 0, 0, 300, 100, 0, 0,
+				new WeatherState(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 270.0F), 50_000L, 100_000L, r));
+		WeatherSample calmSample = ZoneBlender.sample(calmButDirected, 0, 64, 0, 192.0F, 224.0F, r);
+		check("a calm zone keeps the bearing it was given",
+				Math.abs(MathUtil.angleDelta(calmSample.state().windDirection(), 270.0F)) < 1.0F,
+				String.valueOf(calmSample.state().windDirection()));
+
+		List<WeatherZone> galeVersusCalm = List.of(
+				new WeatherZone(201, 0, 0, 300, 100, 0, 0,
+						new WeatherState(0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 90.0F), 50_000L, 100_000L, r),
+				new WeatherZone(202, 0, 0, 300, 100, 0, 0,
+						new WeatherState(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 270.0F), 50_000L, 100_000L, r));
+		WeatherSample contested = ZoneBlender.sample(galeVersusCalm, 0, 64, 0, 192.0F, 224.0F, r);
+		check("a gale still decides the bearing against a calm zone pointing the other way",
+				Math.abs(MathUtil.angleDelta(contested.state().windDirection(), 90.0F)) < 10.0F,
+				String.valueOf(contested.state().windDirection()));
+
 		System.out.println("\n================================");
 		System.out.println("passed " + passed + ", failed " + failed);
 		System.out.println("================================");
